@@ -1,15 +1,17 @@
 # Certified Split Points for Parallel Lexing: Exact and Modulo Discarded Tokens
 
-**Nicklas Nidhögg**, August 4, 2026. Mirrors `paper/split-points/split-points.tex`, the source posted as v4 of
+**Nicklas Nidhögg**, August 4, 2026. Mirrors `paper/split-points/split-points.tex`, the source posted as v5 of
 [arXiv:2608.03473](https://arxiv.org/abs/2608.03473). The paper describes munch at the v1.2.0 release, with one later
-rule beside it. It makes three version statements of its own. It cites the library at release tag `v1.2.0`, archived at
-doi:10.5281/zenodo.21752997. It names release 2.2.0 as the release that ships the coalesced test of Section 5.1, the
-rule behind `Lexer::is_split_point_ignoring()`. And its applicability section notes that the pinned v1.2.0 probe carries
-the construction-cost grammar's transcription "verified by eye only", a binding later releases add mechanically. The
-exact decision of Section 5.2 is a figure program beside the library, `paper/figures/modulo.hpp`, and the library
-decides the same question as `Lexer::modulo_counterexample()`. The scaling measurements in the evaluation were taken on
-an earlier tree, preserved by the `benchmark/split-points-2026-08` tag; the composition and validation figures are
-asserted from the release tree under CI, and the certificate figures' DOT sources are regenerated there and
+rule and one later decision beside it. It makes four version statements of its own. It cites the library at release tag
+`v1.2.0`, archived at doi:10.5281/zenodo.21752997. It names release 2.2.0 as the release that ships the coalesced test
+of Section 5.1, the rule behind `Lexer::is_split_point_ignoring()`. It names release 3.1.0, cited at release tag
+`v3.1.0` and archived at doi:10.5281/zenodo.24220471, as the release that implements the exact decision of Section 5.2
+as `Lexer::modulo_counterexample()`, run only when a caller asks and within a cap on the states each search holds. And
+its applicability section notes that the pinned v1.2.0 probe carries the construction-cost grammar's transcription
+"verified by eye only", a binding later releases add mechanically. The results the paper reports for the exact decision
+come from a figure program beside the library, `paper/figures/modulo.hpp`. The scaling measurements in the evaluation
+were taken on an earlier tree, preserved by the `benchmark/split-points-2026-08` tag; the composition and validation
+figures are asserted from the release tree under CI, and the certificate figures' DOT sources are regenerated there and
 byte-compared against the committed copies. The tables below are produced mechanically from the paper's own tabular
 sources, never transcribed by hand.
 
@@ -28,14 +30,14 @@ completely tokenizable input begins a token, so chunks starting there reproduce 
 lengths. The condition is necessary and sufficient, but one string, comment, or whitespace run can remove every useful
 certificate. Comments and whitespace are usually discarded, so we weaken the guarantee to equality after deleting a
 declared discarded set and give a second condition, a precomputed constant-time one-bit test. It is *sound but
-incomplete* and more permissive, strictly so on suitable token sets and discarded sets. It recovers newline for a
+incomplete* and more permissive, strictly so on suitable token and discarded sets. It recovers newline for a
 conventional C-like tokenization and tab, newline and carriage return for JSON, and refuses newline where block comments
-are unrestricted. Safety modulo the discarded set is decidable in PSPACE for every token automaton and in polynomial
-time for literal vocabularies, and every unsafe byte has a replayable counterexample. On the fifteen token sets studied
-the second condition is already exact. Splitting at exact certificates in munch (release v1.2.0) reaches 92.6 to 95.3%
-parallel efficiency at eight threads on a restricted CPU set and a 512 MiB corpus, and a 3.46 to 3.94× end-to-end
-speedup at four threads, on one machine. It turns delimiter-based parallel lexing from a language-specific assumption
-into a property a compiler checks.
+are unrestricted. Safety modulo the discarded set is PSPACE-complete for general token automata and decidable in
+polynomial time for literal vocabularies, and every unsafe byte has a replayable counterexample. On the fifteen token
+sets studied the second condition is already exact. Splitting at exact certificates in munch (release v1.2.0) reaches
+92.6 to 95.3% parallel efficiency at eight threads on a restricted CPU set and a 512 MiB corpus, and a 3.46 to 3.94×
+end-to-end speedup at four threads, on one machine. It turns delimiter-based parallel lexing from a language-specific
+assumption into a property a compiler checks.
 
 ## 1 Introduction
 
@@ -84,10 +86,11 @@ The contributions are:
   and JSON tokenizations that certify nothing exactly (Section 5). A stronger local test, the rule of release 2.2.0 of
   munch, is proved sound, strictly stronger and still incomplete. The library ships that test as a second constant-time
   one-bit query outside the planner, so a caller using it places the boundaries itself (Section 5.1).
-- The exact question answered: safety modulo `I` at every occurrence is decidable in polynomial space for every token
-  automaton and in polynomial time for literal vocabularies, and every unsafe byte comes with an input and a cut that
-  replay the failure. The decision runs a complete-scan automaton with obligation sets, a failure automaton beside it,
-  and a finite test of output equality by group delays (Section 5.2).
+- An exact decision procedure for safety modulo `I` at every occurrence, a problem that is PSPACE-complete for general
+  token automata and decidable in polynomial time for literal vocabularies. Every unsafe byte comes with an input and a
+  cut that replay the failure. The decision runs a complete-scan automaton with obligation sets, a failure automaton
+  beside it, and a finite test of output equality by group delays (Section 5.2). Release 3.1.0 of munch implements it as
+  `modulo_counterexample()`.
 - A controlled applicability study of fifteen token sets under both conditions, showing where each condition yields
   useful bytes, how one added token kind can eliminate every useful exact certificate, and when line-based splitting is
   sound for the C-like tokenizations studied. The exact decision confirms every cell of the relaxed column (Section 7).
@@ -96,16 +99,16 @@ The contributions are:
 applicability results are asserted cell by cell by `figures/applicability.cpp`, and the throughput row rests on one
 machine and two benchmark revisions, as Section 8 details.
 
-| Question                                                             | Answer                                                                                                                                                                                                         | Where              |
-|----------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|--------------------|
-| When may a chunk boundary be taken without knowing what precedes it? | No live state other than `q0` has a live transition on the byte, and `q0` is not re-entrant if it has one                                                                                                      | Theorem 1          |
-| Is that condition merely sufficient?                                 | No, it is necessary as well                                                                                                                                                                                    | Theorem 2          |
-| What does it cost to decide?                                         | Time linear in the compiled tables, then one bit per byte                                                                                                                                                      | Section 6          |
-| Do real token sets satisfy it?                                       | 15 token sets measured, and the conventional C-like and JSON rows certify no useful byte exactly                                                                                                               | Table 2            |
-| Can a token set that certifies no useful byte be rescued?            | Weakening to equality modulo discarded tokens recovers newline there, and eight of the fifteen rows gain bytes                                                                                                 | Section 5, Table 2 |
-| Is a refusal of the relaxed condition final?                         | No. Safety modulo `I` is decidable in polynomial space and every unsafe byte has a replayable counterexample. On the fifteen rows every refusal stood                                                          | Theorem 5, Table 2 |
-| Can it be bought by design?                                          | In the studied grammar the block comment is the one token spanning lines. Once newline is its own token, a line-bounded block comment suffices, while barring the kinds from each other's openers buys nothing | Table 2            |
-| Does it pay?                                                         | 92.6 to 95.3% parallel efficiency at eight threads, 3.46 to 3.94× end to end at four                                                                                                                           | Section 8          |
+| Question                                                             | Answer                                                                                                                                                                                                         | Where                     |
+|----------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------------------------|
+| When may a chunk boundary be taken without knowing what precedes it? | No live state other than `q0` has a live transition on the byte, and `q0` is not re-entrant if it has one                                                                                                      | Theorem 1                 |
+| Is that condition merely sufficient?                                 | No, it is necessary as well                                                                                                                                                                                    | Theorem 2                 |
+| What does it cost to decide?                                         | Time linear in the compiled tables, then one bit per byte                                                                                                                                                      | Section 6                 |
+| Do real token sets satisfy it?                                       | 15 token sets measured, and the conventional C-like and JSON rows certify no useful byte exactly                                                                                                               | Table 2                   |
+| Can a token set that certifies no useful byte be rescued?            | Weakening to equality modulo discarded tokens recovers newline there, and eight of the fifteen rows gain bytes                                                                                                 | Section 5, Table 2        |
+| Is a refusal of the relaxed condition final?                         | No. Safety modulo `I` is decidable, PSPACE-complete for general token automata, and every unsafe byte has a replayable counterexample. On the fifteen rows every refusal stood                                 | Theorems 5 and 6, Table 2 |
+| Can it be bought by design?                                          | In the studied grammar the block comment is the one token spanning lines. Once newline is its own token, a line-bounded block comment suffices, while barring the kinds from each other's openers buys nothing | Table 2                   |
+| Does it pay?                                                         | 92.6 to 95.3% parallel efficiency at eight threads, 3.46 to 3.94× end to end at four                                                                                                                           | Section 8                 |
 
 Table 1 gathers the claim in one place before the definitions arrive. The paper separates the result from the study
 around it. The result is Sections 3 to 5: the definitions, the exact certificate with its necessity proof and the
@@ -115,7 +118,7 @@ applicability of both conditions over fifteen token sets, and the measured paral
 certificate among the existing answers to the entry-state problem before the result, and Section 10 returns to that
 literature after it. A companion paper generalizes the certificate from single bytes to short byte windows
 ([arXiv:2608.09761](https://arxiv.org/abs/2608.09761)), and a second reuses the same certificates to choose where a scan
-resumes after an error ([arXiv:2609.10600](https://arxiv.org/abs/2609.10600)); nothing here depends on either.
+resumes after an error ([arXiv:2609.10600](https://arxiv.org/abs/2609.10600)). Nothing here depends on either.
 
 ## 2 Prior approaches
 
@@ -187,8 +190,8 @@ immediately before.
 
 **Prescan for context.** Plex (Li, Sato, Liu and Taura, IPDPS 2021) removes the need for delimiters entirely. From the
 scanner's own DFA it derives a backtrack-free prescanning automaton, runs a prescan to recover each chunk's context, and
-then scans the chunks in parallel without language-specific delimiter analysis. The price is a pass over the input; the
-benefit is that it applies to grammars that certify nothing here.
+then scans the chunks in parallel without language-specific delimiter analysis. The price is a pass over the input, and
+the benefit is that it applies to grammars that certify nothing here.
 
 **Analyze the grammar for streaming.** Deciding something about a maximal-munch token set statically, before any input,
 is an established move. Yang, Tsay, and Chan (Computer Languages, Systems & Structures 2002) decide automatically
@@ -275,10 +278,9 @@ and one failed chunk stops no other. The single-match entry point reports the le
 looping over it must reject that match itself. The composite system is not a single automaton run but a run that *resets
 to `q0` at every token boundary*, and the certificate exploits that reset. Write `tok(w)` for the sequence of (token,
 length) pairs the scanner emits on `w`, and `con(w)` for the scanner's final committed offset, equivalently the sum of
-the lengths in `tok(w)`; bytes inspected during failed lookahead beyond the last accepted prefix are not counted. Call
-`w` *completely tokenizable* when `con(w) = |w|`, and call an offset a *token boundary* of `w` when it is `0` or a
-cumulative sum of the emitted lengths; `con(w)` is always a boundary, and `|w|` is one exactly when `w` is completely
-tokenizable.
+the lengths in `tok(w)`. Failed lookahead does not itself advance the committed offset. Call `w` *completely
+tokenizable* when `con(w) = |w|`, and call an offset a *token boundary* of `w` when it is `0` or a cumulative sum of the
+emitted lengths. Then `con(w)` is always a boundary, and `|w|` is one exactly when `w` is completely tokenizable.
 
 ## 4 The certificate
 
@@ -290,8 +292,8 @@ undefined otherwise. All that follows is stated over the *live subautomaton* `A�
 shows why neither half of the restriction is cosmetic. A pattern denoting the empty language leaves reachable states
 outside `Q⁺` whose transitions would otherwise de-certify symbols that no token can contain. A state no input enters
 lies on no counterexample, so admitting one would let a transition that no scan ever takes de-certify a symbol that
-every scan treats as safe. If `q0 ∉ Q⁺` the token set accepts nothing, and no symbol is useful; we assume `q0 ∈ Q⁺`
-throughout.
+every scan treats as safe. We assume `q0 ∈ Q⁺` throughout, since otherwise the token set accepts nothing and no symbol
+is useful.
 
 One consequence is used repeatedly below: the match path of any emitted token lies in `A⁺` throughout, since every
 transition along it leads to that token's accepting position, so reasoning about emitted tokens may read `δ` as `δ⁺`
@@ -384,13 +386,15 @@ unchanged to that token. The state `q` reached on the nonempty `w_s ... w_(i-1)`
 by Definition 2, hence `q0` is re-entrant, which Definition 2 forbids once `δ⁺(q0, b)` is defined. Completeness of the
 tokenization is not used, only that the offsets below `con(w)` were successfully traversed. ∎
 
-**Corollary 1 (malformed input).** Take the partition of Theorem 1. If `con(w) < |w|`, let `[c_j, c_(j+1))` be the chunk
-containing the first failure, which is the chunk's own first byte when `con(w) = c_j`. By Lemma 3 every interior
-boundary below `con(w)` is a token boundary of the serial scan, so the reasoning of Theorem 1 applies to the chunks
-before it. Every chunk before `c_j` is fully consumed and contributes exactly the tokens the serial scan emits there,
-and the chunk containing the failure halts at the same offset. The serial stream is therefore a prefix of the
-concatenation, but chunks after the failure may emit tokens the serial scan never reaches. A caller must check every
-chunk's consumed length before treating the concatenation as a successful tokenization.
+**Corollary 1 (malformed input).** Let `w` be any input with `con(w) < |w|`, and let `0 = c_0 < c_1 < ... < c_m = |w|`
+be offsets such that each interior `c_j` holds a certified symbol. Let `[c_j, c_(j+1))` be the chunk containing the
+offset `con(w)` of the first failure, which is the chunk's own first byte when `con(w) = c_j`. By Lemma 3 every interior
+boundary below `con(w)` is a token boundary of the serial scan, and `con(w)` is one always, so the reasoning of Theorem
+1 applies to every chunk that ends at or before `con(w)`. Every chunk before `c_j` is fully consumed and contributes
+exactly the tokens the serial scan emits there, and the chunk containing the failure halts at the same offset. The
+serial stream is therefore a prefix of the concatenation, but chunks after the failure may emit tokens the serial scan
+never reaches. A caller must check every chunk's consumed length before treating the concatenation as a successful
+tokenization.
 
 **Proposition 1 (vacuous certificates).** If no `q ∈ Q⁺` has `δ⁺(q, b)` defined, then `b` is certified, and no
 completely tokenizable input contains `b`.
@@ -488,9 +492,9 @@ tests.
 **Figure 1.** Minimized automata drawn by the library described here. Double circles are accepting states, labeled with
 the state number and the token identifier. In (a) nothing enters state 0 and no other state consumes `;`, so `;` is
 certified. In (b) state 0 accepts and re-enters itself on `a`, and in (c) it is re-entered through the cycle `a, b`. In
-both counterexamples the only state consuming the candidate byte is the initial one, so dropping the re-entrancy
-condition would certify it and break longest match. The shipped predicate rejects the candidate in (b) and (c) and
-accepts `;` in (a).
+both examples the only state consuming the candidate byte is the initial one, so dropping the re-entrancy condition
+would certify it and break longest match. The shipped predicate rejects the candidate in (b) and (c) and accepts `;` in
+(a).
 
 (a) `a+` and `;`:
 
@@ -520,13 +524,12 @@ Write `T(q) = { τ(p) | p = (δ⁺)*(q, v) for some v ∈ Σ*, τ(p) defined }` 
 `τ(q) ∈ T(q)` whenever `τ(q)` is defined.
 
 **Definition 3 (certified modulo `I`).** A symbol `b ∈ Σ` is *certified modulo `I`* if every `q ∈ Q⁺` with `δ⁺(q, b)`
-defined satisfies `A(q)` or `C(q)`, where `A(q) ≡ q = q0 and q0 is not re-entrant`, and `C(q)` holds when all three of
+defined satisfies `A(q)` or `C(q)`, where `A(q) ≡ q = q0 and q0 is not re-entrant`, and `C(q)` holds when the following
+three are satisfied:
 
 1. `τ(q)` is defined,
 2. `δ⁺(q0, b)` is defined and equal to `δ⁺(q, b)`, and
-3. `T(q) ⊆ I`
-
-are satisfied.
+3. `T(q) ⊆ I`.
 
 The two alternatives are not symmetric, and the asymmetry matters. `A(q)` is Definition 2, under which the initial state
 may consume `b` only while nothing returns to it mid-scan. `C(q)` is the relaxation, and it is available to *every*
@@ -550,7 +553,8 @@ itself. Where the two local tests must be told apart, Definition 3 is called the
 **Theorem 3 (split invariance modulo `I`).** Let `w` be completely tokenizable and let `0 = c_0 < c_1 < ... < c_m = |w|`
 be offsets such that each interior `c_j` holds a symbol certified modulo `I`. Then
 `π_I(tok(w)) = π_I(tok(w[c_0..c_1)) · tok(w[c_1..c_2)) ··· tok(w[c_(m-1)..c_m)))`, where `·` denotes concatenation of
-token sequences and `w[a..b)` the corresponding slice.
+token sequences and `w[a..b)` the corresponding slice. Every slice `w[c_j..c_(j+1))` is also completely tokenizable, so
+every symbol certified modulo `I` is safe modulo `I` in the sense of Definition 5.
 
 *Proof.* For empty `w` the partition degenerates as in Theorem 1 and both images are empty; assume `|w| > 0`. By
 induction on `m` it suffices to treat one interior cut at `c` holding `b`. The induction is well founded because the
@@ -558,10 +562,9 @@ one-cut argument below shows each chunk consumes its whole slice, so both slices
 and the remaining cuts may be applied to them in turn.
 
 Suppose first that `c` is a token boundary of `w`. The left slice `w[0..c)` emits the same tokens as `w` on `[0, c)` by
-Lemma 2 taken with `s = c`, and that rules out a last token whose failed lookahead crossed `c` in `w`. The scanner
-enters every token in `q0` and carries no state across boundaries, so the chunk beginning at `c` starts in the same
-state as the scan of `w` does there and reads the same bytes. The token sequences on the two sides are equal before
-`π_I` is applied, and `π_I` preserves equality.
+Lemma 2 taken with `s = c`. The scanner enters every token in `q0` and carries no state across boundaries, so the chunk
+beginning at `c` starts in the same state as the scan of `w` does there and reads the same bytes. The token sequences on
+the two sides are equal before `π_I` is applied, and `π_I` preserves equality.
 
 Otherwise `c` lies strictly inside an emitted token spanning `[s, e)` and carrying token `t`. Let `u = w_s ... w_(c-1)`,
 which is nonempty, and let `q = (δ⁺)*(q0, u)` be the state immediately before `b` is consumed. The token's match path
@@ -571,10 +574,9 @@ It follows that `C(q)` holds, and it holds whether or not `q` happens to be a re
 the generalization over Definition 2 is used.
 
 Consider the chunk ending at `c`, which is the prefix `w[0..c)` with `c > s`. By Lemma 2 the chunk emits the same tokens
-as `w` on `[0, s)` and reaches `s` in `q0`. The lemma rules out an earlier token whose failed lookahead ran past `s` in
-`w` and is truncated here. The chunk then consumes `u` and arrives at `q` with the chunk exhausted. Since `τ(q)` is
-defined by condition 1, the last accepting position recorded is `c` itself, so the chunk emits the single token `τ(q)`
-spanning `[s, c)` and consumes to its end.
+as `w` on `[0, s)` and reaches `s` in `q0`. The chunk then consumes `u` and arrives at `q` with the chunk exhausted.
+Since `τ(q)` is defined by condition 1, the last accepting position recorded is `c` itself, so the chunk emits the
+single token `τ(q)` spanning `[s, c)` and consumes to its end.
 
 Consider the chunk beginning at `c`. The chunk starts in `q0` and consumes `b`, reaching `δ⁺(q0, b)`. By condition 2
 this equals `δ⁺(q, b)`, the state the scan of `w` occupies after consuming the same byte at the same offset. From there
@@ -582,10 +584,10 @@ both runs read identical bytes from identical states, so they record identical a
 `t` spanning `[c, e)`. Both runs then stand at `e` in `q0`, and `e` is a boundary of `w`, so the remainders agree. The
 two sides differ only in that `t` on `[s, e)` is replaced by `τ(q)` on `[s, c)` followed by `t` on `[c, e)`. Both `τ(q)`
 and `t` lie in `T(q)`, which condition 3 places inside `I`, so `π_I` deletes all three occurrences and the images
-coincide. ∎
+coincide. In both cases each chunk consumed its whole slice, so a single cut meets both requirements of Definition 5. ∎
 
-Corollary 1 has no analogue here. When the serial scan does not tokenize the input completely, no `π_I`-prefix relation
-is claimed, and a caller must still check every chunk's consumed length before trusting the concatenation at all.
+Corollary 1 has no analog here. When the serial scan does not tokenize the input completely, no `π_I`-prefix relation is
+claimed, and a caller must still check every chunk's consumed length before trusting the concatenation at all.
 
 **Proposition 2 (useful certificates modulo `I`).** Proposition 1 and Corollary 2 carry over: a symbol no live state
 consumes is certified modulo `I` for every `I` and occurs in no completely tokenizable input, and a symbol certified
@@ -623,20 +625,19 @@ Discard stays distinct from reject, and the empty `z` compares the two states th
 
 **Definition 4 (certified modulo `I`, coalesced).** A symbol `b ∈ Σ` is *certified modulo `I` under the coalesced test*
 if every `q ∈ Q⁺` with `δ⁺(q, b)` defined satisfies `A(q)` or `C'(q)`, where `A` is as in Definition 3 and `C'(q)` holds
-when all three of
+when the following three are satisfied:
 
 1. `τ(q) ∈ I`,
 2. `δ⁺(q0, b)` is defined and `δ⁺(q0, b) ≡_I δ⁺(q, b)`, and
-3. `T(δ⁺(q, b)) ⊆ I`
-
-are satisfied.
+3. `T(δ⁺(q, b)) ⊆ I`.
 
 Two things changed: equality of the two states became equivalence, and the requirement that the future be discarded
 applies to the state past the cut rather than to the state before it. The old clause 3 asked that everything reachable
 from `q` is discarded, but only the continuations through `b` belong to the severed token, and the new clause 1 discards
 the left fragment itself.
 
-**Theorem 4 (soundness of the coalesced test).** Theorem 3 holds with Definition 4 in place of Definition 3.
+**Theorem 4 (soundness of the coalesced test).** Theorem 3 holds with Definition 4 in place of Definition 3, and so does
+Proposition 2.
 
 *Proof.* As in Theorem 3, one interior cut at `c` holding `b` suffices, and a cut at a token boundary of `w` is settled
 as in that proof, without any use of `C`. Otherwise `c` lies strictly inside an emitted token spanning `[s, e)` and
@@ -658,7 +659,11 @@ the chunk's token is discarded too. Both scans restart in `q0` at `e`, which is 
 agree.
 
 The two sides differ only in that `t` on `[s, e)` is replaced by `τ(q)` on `[s, c)` followed by a discarded token on
-`[c, e)`. All three lie in `I`, so `π_I` deletes them and the images coincide. ∎
+`[c, e)`. All three lie in `I`, so `π_I` deletes them and the images coincide. Each chunk again consumed its whole
+slice.
+
+Proposition 2 carries over with its proof. Definition 4 likewise quantifies over an empty set when no live state
+consumes `b`, and its clause 2 likewise requires `δ⁺(q0, b)` to be defined. ∎
 
 Nothing about lengths is given up, since both scans end the severed token at `e`. Compared with equality, the
 equivalence gives up only the identity of the state at `e`, which the projection never sees.
@@ -679,9 +684,10 @@ since only `D` lies past the cut. The only other state consuming `b` is `q0`, wh
 admits `b`.
 
 For the second change, take the literals `a`, `b`, `c` and `ab` of one discarded kind and the kept literal `ac`. After
-`a` the scan stands in a state `q` from which `ac` is still reachable, so `T(q) ⊄ I` and Definition 3 refuses `b`. Yet
-`δ⁺(q, b)` accepts `ab` and `δ⁺(q0, b)` accepts `b`. Both are discarded leaves and `τ(q)` is discarded, so Definition 4
-admits `b`.
+`a` the scan stands in a state `q` from which `ac` is still reachable, so `T(q) ⊄ I` and Definition 3 refuses `b`. The
+minimizer merges the states accepting `ab` and `b`, both discarded leaves of one kind, so `δ⁺(q, b) = δ⁺(q0, b)` and
+clauses 1 and 2 of Definition 3 hold at `q`, where only its clause 3 fails. That leaf reaches nothing kept, `τ(q)` is
+discarded and the only other state consuming `b` is again `q0`, so Definition 4 admits `b`.
 
 For incompleteness, take the literals `a`, `b`, `c` and `abc` of one discarded kind and the kept literals `k` and `kk`
 of one kind `K`. Every input over these four letters tokenizes completely, since each letter is a token. Kept output
@@ -715,7 +721,8 @@ turn, so the conclusion of Theorem 3 follows for any partition at safe symbols.
 
 **Theorem 5 (exact decision).** For every token automaton and every `I ⊆ T`, whether `b` is safe modulo `I` is
 decidable. A procedure singly exponential in `n` and polynomial in `|Σ|` and `|T|` decides it, and returns a completely
-tokenizable input and a cut that violate Definition 5 whenever `b` is not safe. The question lies in PSPACE.
+tokenizable input and a cut that violate Definition 5 whenever `b` is not safe. The question lies in PSPACE, and Theorem
+6 shows it complete for that class.
 
 The proof builds three finite automata from the token automaton and tests two products for emptiness and one for
 equality of outputs. The first automaton recognizes the completely tokenizable words. It guesses where each token ends.
@@ -876,11 +883,454 @@ keeps the two output lengths and the letter each output has at position `j`. At 
 lengths differ or the two letters do, which detects exactly unequal outputs. Unsafety is therefore in NPSPACE, which is
 PSPACE, and PSPACE is closed under complement. ∎
 
-Nothing here shows the question PSPACE-hard, or that the obligation sets must be exponential in general, and both
-questions are open. The bound is also measured in the size of the compiled automaton. Where the tokens are listed, the
-obligations collapse.
+The upper bound of Theorem 5 is matched by a lower bound that holds with three symbols and at most two token kinds. The
+source problem is intersection non-emptiness: given complete DFAs `A_1, ..., A_m` over a common alphabet, is some word
+accepted by all of them? Kozen proved it PSPACE-complete (FOCS 1977, Lemma 3.2.3, p. 261). We take the source DFAs over
+the alphabet `{0, 1}`, which loses nothing, since a fixed-length binary code of the letters, decoded by a polynomial
+number of added states with a rejecting sink for malformed codes, carries any alphabet to this one.
 
-**Theorem 6 (literal vocabularies).** Let the tokens be a finite list of nonempty words with kinds, equal words resolved
+**Theorem 6 (PSPACE-completeness).** Deciding whether `b` is safe modulo `I`, given the token automaton, `I` and `b`, is
+PSPACE-complete. It remains PSPACE-hard for token automata over three symbols with one kept and one discarded kind for
+which every input over the three symbols is completely tokenizable. It also remains PSPACE-hard for token automata over
+three symbols with a single kind, which is discarded.
+
+The two restricted families separate the two clauses of Definition 5. In the first every chunk of every input is
+completely tokenizable, so only the equality of the kept streams can fail. In the second every kept stream is empty, so
+only chunk completeness can fail.
+
+*Proof.* Membership is Theorem 5. For hardness, the reduction is first given over six symbols, which keeps its tokens
+readable, and is then coded over three. Let `A_i = (Q_i, {0, 1}, δ_i, s_i, F_i)` for `i = 1, ..., m`, with `m >= 1`, be
+complete DFAs with languages `L(A_i)`. The token automaton has the symbols `0, 1, x, $, [, #` and two kinds, a kept kind
+`K` and a discarded kind `D`, so that `I = {D}`, and the symbol in question is `b = #`, a letter of `Σ`. Its tokens have
+four forms. The single symbol `$` is a token of kind `K`, and each of the single symbols `0`, `1`, `x`, `[` and `#` is a
+token of kind `D`. The *testers* are the words `xⁱ y $` with `1 <= i <= m`, `y ∈ {0, 1}*` and `y ∉ L(A_i)`, and the
+*wrappers* are the words `[ # xᵐ y $` with `y ∈ {0, 1}*`. Testers and wrappers are tokens of kind `D`.
+
+A deterministic automaton accepts these tokens. Its states are `q0`, a chain `h_1, ..., h_m`, a chain
+`g, g_0, ..., g_m`, a copy of every state of every `Q_i`, and three accepting states without outgoing transitions, `f_K`
+of kind `K` and `f_D` and `f` of kind `D`. From `q0` the symbols `0`, `1` and `#` lead to `f_D`, `$` leads to `f_K`, `[`
+leads to `g` and `x` leads to `h_1`, and both `g` and `h_1` accept with kind `D`. The symbol `#` leads from `g` to `g_0`
+and `x` leads from `g_j` to `g_(j+1)` for `j < m`, while `g_m` loops on `0` and `1` and moves to `f` on `$`. The symbol
+`x` also leads from `h_i` to `h_(i+1)` for `i < m`. On a symbol `a ∈ {0, 1}` the state `h_i` moves to the copy of
+`δ_i(s_i, a)` and the copy of `p ∈ Q_i` moves to the copy of `δ_i(p, a)`, so that after `xⁱ y` the automaton stands at
+`h_i` when `y` is empty and at the copy of the state `A_i` reaches on `y` otherwise. Finally `$` leads to `f` from `h_i`
+when `s_i ∉ F_i` and from the copy of `p ∈ Q_i` when `p ∉ F_i`. The automaton has `|Q_1| + ... + |Q_m| + 2m + 6` states
+and is computed from the `A_i` in polynomial time. States outside `Q⁺`, such as the copies of the states of an `A_i`
+that accepts every word, lie on no token's match path and play no part below.
+
+Every one of the six symbols is a token, so every nonempty word over them begins with a token, the scanner never halts
+with input remaining, and every input over the six symbols is completely tokenizable. The chunk-completeness clause of
+Definition 5 therefore holds at every cut, and `#` is safe modulo `I` exactly when the kept streams agree at every cut
+before a `#`. At each token start the scanner emits the longest token that is a prefix of the remaining input, and three
+observations about these prefixes are used below. First, the only tokens containing `#` are the single symbol and the
+wrappers, and a wrapper has it as its second symbol. Second, the only token beginning with `0`, `1` or `#` is that
+single symbol. Third, let the remaining input be `xʲ y $ r` with `1 <= j <= m`, `y ∈ {0, 1}*` and `r` arbitrary. A token
+beginning with `x` is the single symbol or a tester. A tester consists of symbols `x`, then symbols `0` and `1`, then
+one `$`, so the only word of that shape that is a prefix of this input is `xʲ y $`, which is a tester exactly when
+`y ∉ L(A_j)`. The scanner thus emits the tester `xʲ y $` when `y ∉ L(A_j)` and the single symbol `x` when `y ∈ L(A_j)`.
+
+Suppose some word `y` is accepted by every `A_i`, and let `w = [ # xᵐ y $`. The scan of `w` emits `w` as one wrapper,
+which is discarded, so its kept stream is empty. The cut `c = 1` holds `#`. The left chunk `[` is one discarded token.
+The scan of the right chunk `# xᵐ y $` emits `#` by the second observation, then stands at `xʲ y $` for `j = m, ..., 1`
+in turn and by the third observation emits the single symbol `x` each time, because `y ∈ L(A_j)`. It then emits the
+symbols of `y` one at a time and finally the token `$` of kind `K`. The chunks have the kept stream `(K, 1)` and the
+whole input has the empty one, so `#` is not safe.
+
+Suppose no word is accepted by every `A_i`. Let `w` be any completely tokenizable input, that is, any input over the six
+symbols, and let `0 < c < |w|` with `w_c = #`, and write `u = w[0..c)` and `v = w[c..|w|)`. If `c` is a token boundary
+of `w`, Lemma 2 shows that the scan of `u` emits the tokens of `w` on `[0, c)` and ends there in `q0`. The scan of `w`
+restarts at `c` in `q0` and proceeds as the scan of `v` does, so `tok(w) = tok(u) · tok(v)` and the kept streams agree.
+Otherwise `c` lies strictly inside a token of `w`, which by the first observation is a wrapper beginning at `c - 1`, so
+that `w[c-1..e) = [ # xᵐ y $` for some `y ∈ {0, 1}*` and some `e <= |w|`. For the left chunk, `c - 1` is a token
+boundary of `w`, so by Lemma 2 the scan of `u` emits the tokens of `w` on `[0, c - 1)` and reaches `c - 1` in `q0`,
+where it emits the last symbol `[` of `u` as a discarded token. For the right chunk, write `r = w[e..|w|)`, so that
+`v = # xᵐ y $ r`. The scan of `v` emits `#` by the second observation and stands at `xᵐ y $ r`. Let `i` be the largest
+index with `y ∉ L(A_i)`, which exists because no word is accepted by every `A_i`. For `j = m, ..., i + 1` in turn the
+scan stands at `xʲ y $ r` with `y ∈ L(A_j)` and emits the single symbol `x`, by the third observation. It then stands at
+`xⁱ y $ r` and emits the tester `xⁱ y $`, which is discarded, and restarts in `q0` at the start of `r`. The scan of `w`
+restarts in `q0` at the same place, after its wrapper, and from there the two scans emit the same tokens. The scan of
+`w` thus emits the tokens of `w` on `[0, c - 1)`, a discarded wrapper, and the tokens it finds on `r`. The two chunks
+emit the same tokens on `[0, c - 1)`, then discarded tokens only, and then the same tokens on `r`. The kept streams
+agree, and `#` is safe. Hence `#` is safe modulo `I` exactly when no word is accepted by every `A_i`.
+
+For a single kind, remove the token `$`, that is, the state `f_K` and the transition into it. The automaton keeps its
+six symbols and has the single kind `D`, with `I = T = {D}`, so every kept stream is empty and `#` is safe exactly when
+both chunks of every cut before it in a completely tokenizable input are completely tokenizable. The three observations
+concern tokens of kind `D` only and still hold. If some word `y` is accepted by every `A_i`, the wrapper `[ # xᵐ y $` is
+completely tokenizable, and the scan of its right chunk at the cut `c = 1` proceeds as before until it stands at the
+final `$`, where it halts because no token begins with that symbol. The right chunk is not completely tokenizable, and
+`#` is not safe. If no word is accepted by every `A_i`, let `w` be completely tokenizable with `w_c = #` and
+`0 < c < |w|`, and argue as in the two-kind case. When `c` is a token boundary of `w`, the scan of `u` consumes `u` and
+the scan of `v` proceeds as the scan of `w` does from `c`, which consumes the rest of `w`. When `c` lies inside a
+wrapper, the scan of `u` consumes `u` as before, and the scan of `v` emits `#`, single symbols `x` and a tester,
+restarts in `q0` at the start of `r`, and consumes `r` as the scan of `w` does. Both chunks are completely tokenizable
+in either case, and `#` is safe.
+
+It remains to code the six symbols over the three symbols `0`, `1` and `#`. Let the map `φ` keep `#`, replace `$` by
+`1`, and replace the symbols `0`, `1`, `x` and `[` by the *code words* `000`, `001`, `010` and `011` in this order. None
+of the six images is a prefix of another, so for words `t` and `z` over the six symbols `φ(t)` is a prefix of `φ(z)`
+only when `t` is a prefix of `z`. The *coded automaton* of either automaton above has the tokens `φ(t)` for the tokens
+`t` of that automaton, each with the kind of `t`, and one further token of kind `D`, the single symbol `0`. It is
+obtained by replacing every transition on `0`, `1`, `x` or `[` with a path of three transitions that spells the code
+word, where the paths out of one state share their common prefixes, by labeling every transition on `$` with `1`
+instead, and by letting the state that `0` leads to from `q0` accept with kind `D`. The result is deterministic, and
+with two kinds it has `3(|Q_1| + ... + |Q_m|) + 7m + 10` states.
+
+The coded scanner follows the scanner over six symbols in this sense. Let the remaining input be `φ(z) r`, where `z` is
+a nonempty word over the six symbols that ends with `$` and `r` is any word over the three. If `φ(t)` is a prefix of
+`φ(z) r` for a token `t`, then `t` is a prefix of `z`. A `φ(t)` no longer than `φ(z)` is a prefix of `φ(z)`, and the
+property of `φ` applies. A longer `φ(t)` would have `φ(z)` as a proper prefix, so that `z` would be a proper prefix of
+`t`, which is impossible because no token continues past a `$`. Conversely the image of every token that is a prefix of
+`z` is a prefix of `φ(z) r`, and of two such tokens the longer has the longer image. The single symbol `0` is a prefix
+of `φ(z) r` only when `z` begins with `0`, `1`, `x` or `[`, and that symbol is then a token whose code word is longer.
+Hence the coded scanner emits `φ(t)` for the longest token `t` that is a prefix of `z`, with the kind of `t`, and halts
+when no token is a prefix of `z`. After such an emission, the remaining input is `φ(z') r` with `z = tz'`, where `z'` is
+empty or ends with `$`. By induction on the number of tokens, the coded scan of `φ(z) r` begins with the images under
+`φ` of the tokens that the scan of `z` emits, in the same order and with the same kinds. If the scan of `z` halts at an
+offset `i < |z|`, the coded scan halts at the offset `|φ(z[0..i))|`, inside `φ(z)`, and emits nothing more. Otherwise
+these images consume `φ(z)`, and the coded scan restarts in `q0` at the start of `r`, from where it proceeds as the scan
+of `r`.
+
+Consider the coded automaton with two kinds. Each of its three symbols is a token, so every input over them is
+completely tokenizable, and the tokens containing `#` are the single symbol and the coded wrappers, which have it as
+their fourth symbol. Suppose some word `y` is accepted by every `A_i`, and let `w = φ([ # xᵐ y $)`, which is one
+discarded token with `#` at the cut `c = 3`. The left chunk `011` is one discarded token. The right chunk is
+`φ(# xᵐ y $)`, so its scan emits the images of the tokens found above for `# xᵐ y $`, the last of which is `1` of kind
+`K`. The chunks have the kept stream `(K, 1)` against the empty one, and `#` is not safe. Suppose no word is accepted by
+every `A_i`, and let `w` be any input over the three symbols with `w_c = #` and `0 < c < |w|`. If `c` is a token
+boundary of `w` the kept streams agree as before. Otherwise `c` lies strictly inside a coded wrapper that begins at
+`c - 3`, so that `w[c-3..e) = φ([ # xᵐ y $)` for some `y` and some `e <= |w|`. By Lemma 2 the scan of `u` emits the
+tokens of `w` on `[0, c - 3)` and reaches `c - 3` in `q0`, where `011` remains. The tokens that are prefixes of it are
+`0` and `011`, and the scan emits the longer, which is discarded. The right chunk is `φ(# xᵐ y $) r` with
+`r = w[e..|w|)`. Its scan emits the images of `#`, of single symbols `x` and of a tester, all discarded, and restarts in
+`q0` at the start of `r`, where the scan of `w` restarts after its wrapper. The kept streams agree, and `#` is safe.
+
+In the coded automaton with the single kind the symbol `1` is no token. If some word `y` is accepted by every `A_i`, the
+coded wrapper `φ([ # xᵐ y $)` is completely tokenizable, and the scan of its right chunk at the cut `c = 3` halts at the
+final `1`, as the scan of `# xᵐ y $` halts at its last symbol. The right chunk is not completely tokenizable, and `#` is
+not safe. If no word is accepted by every `A_i`, let `w` be completely tokenizable with `w_c = #` and `0 < c < |w|`. The
+two cases just given apply again. When `c` is a token boundary of `w`, the scan of `u` consumes `u` and the scan of `v`
+proceeds as the scan of `w` does from `c`. When `c` lies inside a coded wrapper, the scan of `u` ends with the token
+`011`, and the scan of `v` restarts in `q0` at the start of `r` and consumes `r` as the scan of `w` does. Both chunks
+are completely tokenizable in either case, and `#` is safe.
+
+In both coded automata `#` is therefore safe modulo `I` exactly when no word is accepted by every `A_i`, and both are
+computed from the `A_i` in polynomial time. Since PSPACE is closed under complement, that question is PSPACE-hard along
+with intersection non-emptiness. This proves hardness in both restricted forms, and with it the theorem. ∎
+
+The automata `S` and `F` are exponential in `n` through their obligation sets. For both an exponential is unavoidable,
+whatever nondeterministic automaton accepts the complete scans or the failed ones.
+
+**Proposition 5 (complete and failed scans need exponentially many states).** For every `k >= 1` there is a token
+automaton with `k + 2` states over three symbols such that the smallest nondeterministic automaton accepting its
+completely tokenizable words has exactly `2ᵏ + 2` states, and so has the smallest nondeterministic automaton accepting
+the words it does not tokenize completely. In both cases a deterministic automaton attains the count.
+
+*Proof.* The symbols are `a`, `b` and `!`, the two *letters* being `a` and `b`, and there is one kind. The automaton has
+the initial state `q0`, a chain `s_1, ..., s_k` and a state `h`. From `q0` the letter `b` leads back to `q0`, the letter
+`a` leads to `s_1`, and `!` leads to `h`. Either letter leads from `s_j` to `s_(j+1)` for `j < k`, and `b` leads from
+`s_k` to `h`, which loops on both letters and returns to `q0` on `!`. The accepting states are `q0` and `s_1`. These are
+`k + 2` states, all of them live. The initial state accepts and is re-entrant, which Section 3 permits, since the
+scanner emits tokens of positive length only. The tokens are the nonempty words that lead from `q0` to `q0` or to `s_1`.
+Each letter is a token, so the scan never halts inside a word of letters, and every word of letters is completely
+tokenizable.
+
+For the upper bounds, call words `x` and `x'` *interchangeable* if, for every word `t`, the word `xt` is completely
+tokenizable exactly when `x't` is. Three facts are used. First, a nonempty word `x` that leads from `q0` to `q0` is
+interchangeable with the empty word. The scan of `xt` reads `x` and stands in `q0`, which accepts, at the offset `|x|`,
+and from there the automaton reads `t` as it does in a scan of `t`. If `y` is the first token of `t`, then `xy` is the
+first token of `xt`, and both scans restart on the same suffix of `t`. Otherwise the first token of `xt` is `x`, and the
+scan restarts in `q0` at the start of `t`. In both cases the scan of `xt` continues as the scan of `t` does. Second, let
+`x` be a word of at most `k - 1` letters followed by `!`, or a word of `k - 1` letters followed by `a`. Then `a x` is
+interchangeable with `x`. After the `a` the automaton stands in `s_1`. It reads all but the last symbol of `x` through
+further states of the chain, none of which accepts, and has no transition on the last symbol, so the first token of
+`a xt` is the single `a`. Third, let `x` and `x'` lead from `q0` to `h`, and suppose that `xy` and `x'y` are completely
+tokenizable for every word `y` of letters, or that neither is for any. Then `x` and `x'` are interchangeable. A word `t`
+that is not a word of letters has the form `y ! t'` with `y` a word of letters, and `xy !` and `x'y !` lead to `q0`, so
+by the first fact `xy ! t'` and `x'y ! t'` are completely tokenizable exactly when `t'` is.
+
+Let `M` be the deterministic automaton whose states are the `2ᵏ` words of `k` letters, the *histories*, and two further
+states `held` and `pending`. The initial state is `bᵏ`. On a letter `c` the history `x_1 x_2 ... x_k` moves to `held` if
+`x_1 = a` and `c = b`, and to `x_2 ... x_k c` otherwise, and on `!` every history moves to `pending`. Both `held` and
+`pending` loop on the letters and move to `bᵏ` on `!`. Every state but `pending` is final. As *representative* take a
+history for itself, `aᵏb` for `held` and `!` for `pending`. We show that every word `w` is interchangeable with the
+representative of the state that `M` reaches on `w`. For the empty word that is the first fact, since `bᵏ` leads from
+`q0` to `q0`. Interchangeable words stay interchangeable when the same symbol is appended to both, so it suffices to
+show, for each state with representative `r` and each symbol `c`, that `rc` is interchangeable with the representative
+of the successor. Let `r = x_1 y` be a history and `c` a letter. If `x_1 = b`, the first fact makes `b yc`
+interchangeable with `yc`. If `x_1 = a` and `c = a`, the second fact does. If `x_1 = a` and `c = b`, both `a y b` and
+`aᵏb` lead to `h` and are words of letters, and the third fact applies. For a history `r` and the symbol `!`, remove the
+letters of `r !` one at a time, a leading `b` by the first fact and a leading `a` by the second, which applies because
+fewer than `k` letters stand between it and the `!`. Only `!` remains. For `held` and a letter `c`, the words `aᵏb c`
+and `aᵏb` lead to `h` and are words of letters. For `pending` and a letter `c`, the words `! c` and `!` lead to `h`, and
+no word `! y` with `y` a word of letters is completely tokenizable, because the automaton reads it without reaching an
+accepting state. The third fact applies to both. Finally `aᵏb !` and `!!` lead to `q0` and are interchangeable with the
+empty word, and hence with `bᵏ`. Taking `t` empty, a word `w` is completely tokenizable exactly when the representative
+of its state is, which holds for the histories and for `aᵏb`, words of letters, and fails for `!`. Hence `M` accepts the
+completely tokenizable words, and with `pending` as its only final state it accepts the others. Both automata have
+`2ᵏ + 2` states.
+
+Let `u = u_1 ... u_k` and `v = v_1 ... v_k` be words of `k` letters each, and call the pair `(u, v)` *blocked* if
+`u_j = a` and `v_j = b` for some `j`. On `u` the automaton `M` moves from `bᵏ` to the history `u`, since the first
+letter of its history is a `b` of the initial state until `k` letters have been read. While `M` then reads `v` from a
+history, that history is `u_j ... u_k v_1 ... v_(j-1)` before the letter `v_j`, so `M` moves to `held` at the first `j`
+with `u_j = a` and `v_j = b` and stays there, and reaches the history `v` if there is no such `j`. From `held` a first
+`!` leads to `bᵏ` and a second to `pending`, while from a history a first leads to `pending` and a second to `bᵏ`. Hence
+`uv !` is completely tokenizable exactly when `(u, v)` is blocked, and `uv !!` exactly when it is not.
+
+For the lower bounds, let `N` be a nondeterministic automaton accepting the completely tokenizable words, and consider
+the `2ᵏ + 2` pairs `(u, u !!)` for the words `u` of `k` letters, `(!, !)` and `(aᵏb, ε)`, where `ε` is the empty word.
+For each of these pairs `(x, y)` the word `xy` is completely tokenizable. No pair `(u, u)` is blocked, the word `!!` is
+a token, and every word of letters is completely tokenizable. Fix an accepting run of `N` on each `xy`, and call its
+state after reading `x` the *midpoint* of the pair. Suppose two of the pairs, `(x, y)` and `(x', y')`, had the same
+midpoint. The part of the first run that reads `x`, followed by the part of the second that reads `y'`, would be an
+accepting run of `N` on `xy'`, and with the pairs exchanged the same splice would be one on `x'y`, so both words would
+be completely tokenizable. No two of the pairs allow that. Words `u ≠ v` of `k` letters differ at some index `j`, where
+one of them has `a` and the other `b`, so `(u, v)` or `(v, u)` is blocked and one of `uv !!` and `vu !!` is not
+completely tokenizable. Both `!` and `aᵏb` lead from `q0` to `h`. On `! u !!` and on `aᵏb u !!` the token automaton
+therefore loops in `h` on `u`, returns to `q0` on the next symbol and moves to `h` on the last, where the input ends, so
+the scan emits a token and halts at the last `!`, which is no token. Finally the word `!`, the first component of one of
+the two further pairs followed by the second of the other, is not completely tokenizable. The `2ᵏ + 2` midpoints are
+therefore distinct. For an automaton accepting the words that are not completely tokenizable, argue in the same way from
+the pairs `(u, u !)`, `(!, ε)` and `(aᵏb, !!)`. Each `xy` is not completely tokenizable, because no pair `(u, u)` is
+blocked, `!` is no token, and the scan of `aᵏb !!` halts at its last symbol as above. A common midpoint would give two
+further such words, but one of `uv !` and `vu !` is completely tokenizable, the words `! u !` and `aᵏb u !` lead from
+`q0` to `q0` and are tokens, and `aᵏb` is a word of letters. The two lower bounds equal the number of states of `M`. ∎
+
+A token automaton with `n = k + 2` live states can thus require exactly `2^(n-2) + 2` states of an automaton for its
+complete scans and of an automaton for its failed ones, deterministic or not. The count is exact for this family only,
+and over five symbols a token automaton with `n` live states requires more.
+
+**Proposition 6 (a larger lower bound over five symbols).** For every `n >= 3` there is a token automaton with `n`
+states, all of them live, over five symbols such that every nondeterministic automaton accepting its completely
+tokenizable words has at least `2ⁿ` states, and every nondeterministic automaton accepting the words it does not
+tokenize completely has at least `3 · 2^(n-1) - 3`.
+
+*Proof.* Let `N = n - 1`. The states are `g` and `p_0, ..., p_(N-1)`, the indices of the latter read modulo `N`, and `R`
+denotes the set of the states `p_j`. The initial state is `q0 = p_0`, the only accepting state is `g`, and there is one
+kind. The symbols are `r`, `c`, `d`, `m` and `!`. The symbol `r` leads `p_j` to `p_(j+1)` and `g` to `g`. The symbol `c`
+leads `p_0` to `g`, `g` to `p_1` and `p_1` to `p_0`, and `d` leads each of the three back, `g` to `p_0`, `p_0` to `p_1`
+and `p_1` to `g`. The symbol `m` leads `p_0` and `g` to `g`, and `!` leads `g` to `p_0` and has no transition from
+`p_0`. Each of `c`, `d`, `m` and `!` leads every state not named for it to itself. All `n` states are live, since `rʲ`
+leads from `p_0` to `p_j` and `r^(N-j)c` from `p_j` to `g`. The symbols `r`, `c` and `d` permute the states.
+
+For a word `w` and an offset `s <= |w|`, the *path from `s`* is the sequence of states the automaton takes from `q0` on
+`w[s..|w|)` for as long as it has a transition, and the path *stands* in a state at the offset at which it reaches that
+state. A scan that stands in `q0` at `s` emits the token ending at the last offset beyond `s` at which the path from `s`
+stands in `g`, and halts at `s` if there is none. The path of a token is the path from its start. For a completely
+tokenizable word `x` that is not empty, the *obligations* of `x` are the states in which the paths of its tokens other
+than the last stand at `|x|`, as in Lemma 4. None of them is `g`, since the scan would have extended that token to
+`|x|`, and the path of the last token stands in `g` at `|x|`. Four facts are used.
+
+First, let the scan of a word `x` emit tokens that start at `s_0 < ... < s_(k-1)`, and let `z` be any word. Within `x`
+the path of each token stands in `g` for the last time at the token's end. The scan of `xz` therefore emits the same
+tokens in order as far as the first one whose path stands in `g` at an offset beyond `|x|`, and that one it extends to
+the last such offset. If there is no such token, the scan of `xz` emits all `k` tokens and stands in `q0` where the scan
+of `x` ended or halted. In either case a token of `xz` that starts before `|x|` starts where a token of `x` starts or
+where the scan of `x` halted.
+
+Second, call a nonempty word `y` over `r`, `c` and `d` *returning* if the automaton, started in `g`, ends in `g` on `y`
+and stands in `p_0` after no proper prefix of `y`. Let `y` be returning and `x` any word such that `xy` is completely
+tokenizable. Then its last token starts at an offset `s < |x|`, and the path from `s` stands in `g` at `|x|`. For that
+path stands in `g` at `|xy|`, and so does the run from `g` on `y` that starts at `|x|`. The three symbols permute the
+states, so two runs on the same symbols that end in the same state stand in the same state at every earlier offset they
+share. If `s >= |x|`, the run from `g` would stand in `p_0` at `s`, after a proper prefix of `y`. Hence `s < |x|`, and
+at `|x|` the path stands where the run starts. By the first fact `s` is the start of a token of `x` or the offset at
+which the scan of `x` halted, so `xy` is not completely tokenizable when none of the paths from those offsets stands in
+`g` at `|x|`.
+
+Third, let `x` be completely tokenizable and not empty and let `y` be returning. Then `xy` is completely tokenizable
+exactly when no prefix of `y` leads an obligation of `x` to `g`. If none does, the first fact lets the scan of `xy` emit
+the tokens of `x` up to the last. The path of the last one stands in `g` at `|x|` and follows the run from `g` on `y`,
+which ends in `g`, so that token is extended to `|xy|`. Otherwise the scan of `xy` extends a token of `x` other than the
+last to an offset beyond `|x|`, and every later token starts beyond `|x|`. If `xy` were completely tokenizable, its last
+token would start before `|x|` by the second fact, so it would be the extended token, and its path would stand in `g` at
+`|x|`. That path stands in an obligation there.
+
+Fourth, let `v` be a nonempty word over `r` and `m`. Both symbols lead `g` to `g`, so a run on `v` that reaches `g` ends
+in `g`. If `x` is completely tokenizable and not empty, then so is `xv`. By the first fact the scan of `xv` extends some
+token of `x`, the last one if no other, and the path of the extended token stands in `g` at `|xv|`, so the token ends
+there. Now let the scan of a word `u` halt at an offset `h < |u|`, and call *pending* the states in which the paths of
+its tokens and the path from `h` stand at `|u|`. Then `uv` is completely tokenizable exactly when `v` leads some pending
+state to `g`. If it leads none there, none of these paths stands in `g` beyond `|u|`, and by the first fact the scan of
+`uv` emits the tokens of `u` and halts at `h`. Otherwise the scan of `uv` extends a token of `u`, or emits them all and
+then a token from `h`, and in both cases the path of that token stands in `g` at `|uv|`, where the token ends.
+
+Three kinds of words are built from the symbols. For every list of distinct states of `R` there is a completely
+tokenizable word over `c` and `r`, not empty, whose obligations are the states of the list in the order of their tokens.
+To see this, let `x` be completely tokenizable and not empty. The symbol `r` leads no state of `R` to `g` and keeps the
+path of the last token in `g`, so `x r` is completely tokenizable with the obligations that `r` leads those of `x` to,
+in the same order. If `p_0` is no obligation of `x`, the symbol `c` leads no obligation to `g` and leads the path of the
+last token to `p_1`, so that token ends at `|x|`, and `c` is a token. Hence `x c` is completely tokenizable, and its
+obligations are the states that `c` leads those of `x` to, in the same order, and then `p_1`. For the empty list take
+`c`, which has no obligation. For any other list let `p_(j+1)` be its last state, where `0 <= j < N`, and let `ℓ` be the
+list that `rʲ` leads onto it, which ends with `p_1`. The symbol `c` leads `p_1` to `p_0` and leaves the other states of
+`R \ {p_0}`, so the states of `ℓ` before the last are those that `c` leads the states of a list without `p_0` to. By
+induction on the length there is a word for that list, and appending `c` and then `rʲ` gives a word for the given list.
+For `O ⊆ R` let `x_O` be such a word for the members of `O` in the order of their indices.
+
+For `Y ⊆ R` let `y_Y` be the word that has, for `j = 0, ..., N - 1` in turn, the two symbols `c d` if `p_(-j) ∈ Y`, and
+then `r` in either case. Let `v_Y` be the same word with `m` in place of `c d`. The word `c d` leads every state back to
+itself, by way of `g` from `p_0` alone, by way of `p_0` from `p_1` alone, and by way of `p_1` from `g`. A run from `p_i`
+on `y_Y` therefore stands in `p_(i+j)` before turn `j`, which is `p_0` exactly when `p_(-j) = p_i`, and it visits `g`
+exactly when `p_i ∈ Y`. The run from `g` ends in `g` and never stands in `p_0`, and `y_Y` is returning. By the third
+fact, if `x` is completely tokenizable and not empty, `x y_Y` is completely tokenizable exactly when no obligation of
+`x` is in `Y`. In the same way `v_Y` leads `p_i` to `g` when `p_i ∈ Y` and back to `p_i` otherwise, because `m` leads no
+state of `R` but `p_0` to `g`.
+
+For every `P ⊆ R` there is a word `u_P` whose scan halts before `|u_P|` with the set of pending states `P`. For the
+empty set take the single symbol `!`, which has no transition from `p_0`. Next let `O ⊆ R` with `p_0 ∉ O`, and consider
+`x_O !`. The symbol `!` leads no state to `g`, leaves the obligations, and leads the path of the last token to `p_0`, so
+the scan emits the tokens of `x_O` and halts at `|x_O|`, where it has no transition. The pending states are `p_0` and
+the members of `O`. Appending `rʲ` changes neither the tokens nor the halt and leads the pending states on by `j`. For a
+nonempty `P` let `p_j` be its member of largest index, let `P°` be the set that `rʲ` leads onto `P \ {p_j}`, which does
+not contain `p_0`, and take `u_P = x_(P°) ! rʲ`. By the fourth fact, `u_P v_Y` is completely tokenizable exactly when
+`P` and `Y` have a common member.
+
+For the complete scans consider the pairs `(x_O, y_(R \ O))` for `O ⊆ R`, the pairs `(u_P, r^(N-j)m y_(R \ P°))` for the
+nonempty `P ⊆ R`, with `j` and `P°` as in `u_P`, and the pair `(ε, ε)`. These are `2^(n-1) + (2^(n-1) - 1) + 1 = 2ⁿ`
+pairs. For each pair `(x, z)` the word `xz` is completely tokenizable. In the first group that is the criterion for
+`x y_Y`. In the second, `r^(N-j)` leads the pending states of `u_P` back to `p_0` and the members of `P°`, and `m` then
+leads only `p_0` to `g`. The path in `p_0` is that of the last token of `x_(P°)`, which the scan extends to the end by
+the first fact, so `u_P r^(N-j)m` is completely tokenizable with the obligations `P°`, and the criterion applies to it.
+The empty word is completely tokenizable.
+
+As in the proof of Proposition 5, an automaton accepting the completely tokenizable words has a midpoint for each pair,
+and the midpoints of two pairs `(x, z)` and `(x', z')` differ if one of `xz'` and `x'z` is not completely tokenizable.
+For two pairs of the first group, with sets `O ≠ O'`, one set has a member outside the other, say `O`, and then
+`x_O y_(R \ O')` is not completely tokenizable. The same holds for two pairs of the second group with the same `j`,
+whose sets `P°` differ, with `u_P r^(N-j)m` in place of `x_O`. For two pairs of the second group whose sets `P` and `P'`
+have the members of largest index `p_j` and `p_k` with `j < k`, no word `u_P r^(N-k)m y_Y` is completely tokenizable. No
+member of `P` has an index above `j`, so `r^(N-k)` leads no pending state of `u_P` to `p_0` and `m` leads none to `g`.
+By the first fact the scan of `u_P r^(N-k)m` emits the tokens of `u_P` and halts where the scan of `u_P` halts, and none
+of the paths from those offsets stands in `g` at the end, as the second fact requires. Nor is any word `u_P y_Y`
+completely tokenizable, since the pending states of `u_P` lie in `R`, or any word `y_Y`, by the second fact with `x`
+empty, which separates the second group and the pair `(ε, ε)` from the first. No `u_P` is completely tokenizable, which
+separates `(ε, ε)` from the second group. All the midpoints are therefore distinct, and there are `2ⁿ` of them.
+
+For the failed scans a first group holds the pairs `(u_P, v_(R \ P))` for `P ⊆ R` and a second the pairs `(x_O, z_O)`
+for `O ⊊ R`, where `z_O = r^(N-i) ! rⁱ v_(R \ O)` for a nonempty `O` and a member `p_i` of it, and
+`z_∅ = c m d r^(N-1) ! v_(R \ {p_0})`. If `x` is completely tokenizable and not empty, then `x z_O` is completely
+tokenizable exactly when some obligation of `x` is outside `O`. For a nonempty `O` the scan of `x r^(N-i) !` extends the
+last token of `x` over the symbols `r` and halts at the `!`, which leads the path of that token to `p_0` and ends that
+of an obligation standing there, so after `rⁱ` the pending states are `p_i` and the obligations of `x`, and the fourth
+fact applies. As `c m d` leads `p_1` to `p_0` and every other state back to itself, `z_∅` leads every state of `R` to
+`g`, and the run from `g` last visits `g` just before reading the `!`. By the first fact the scan of `x z_∅` extends the
+token of the first obligation of `x` to the end, or if there is none the last token to the `!`, where the scan halts.
+
+For the third, let `J ⊆ R` be neither empty nor `R`, let `b_J = p_i` be its member of least index for which `p_(i-1)` is
+outside `J`, and let `x^J` be a word for the list of the members of `J` other than `b_J` as they occur in
+`p_(i+1), p_(i+2), ..., p_(i-1)`, then `b_J`, and then the states outside `J` as they occur in the same sequence. The
+third group holds the pairs `(x^J, v_(R \ J) y_({b_J}))`. If `x` is completely tokenizable and not empty and `b ∈ J`,
+the word `x v_(R \ J) y_({b})` is completely tokenizable exactly when `b` is no obligation of `x` or an obligation
+outside `J` precedes it. By the first fact the scan of `x v_(R \ J)` extends the token of the first obligation outside
+`J` to the end, or the last token if there is none. The obligations before it lie in `J` and are back in their states,
+and the criterion for `x y_Y` applies.
+
+These are `2^(n-1) + (2^(n-1) - 1) + (2^(n-1) - 2) = 3 · 2^(n-1) - 3` pairs. For each pair `(x, z)` the word `xz` is not
+completely tokenizable, in the first group by the criterion for `u_P v_Y`, in the second because every obligation of
+`x_O` is in `O`, and in the third because `b_J` precedes every state outside `J` among the obligations of `x^J`. Arguing
+as before, two pairs have distinct midpoints if one of `xz'` and `x'z` is completely tokenizable. For two pairs of the
+first group, say with a member of `P` outside `P'`, that is `u_P v_(R \ P')`, and for two of the second, say with a
+member of `O` outside `O'`, it is `x_O z_(O')`. A pair of the first group and a pair of the other two give a word
+`x v_Y` with `x` completely tokenizable and not empty, which is completely tokenizable by the fourth fact. A pair of the
+second group and a pair of the third give `x^J z_O`, which is completely tokenizable because every state of `R` is an
+obligation of `x^J`. Take two pairs of the third group, with sets `J ≠ J'`, `b = b_J` and `b' = b_(J')`. It suffices
+that a state outside `J` precedes `b` among the obligations of `x^(J')`, or one outside `J'` precedes `b'` among those
+of `x^J`. If `b = b'`, a member of one set outside the other, say of `J`, precedes `b'` in `x^J`. Otherwise let
+`b = p_i` and `a = p_(i-1)`, which is outside `J`. If `b ∉ J'`, every member of `J'` precedes `b` in `x^(J')`, so either
+one outside `J` does, or `J' ⊆ J` and `a`, outside `J'` and other than `b'`, precedes `b` there. The case `b' ∉ J` is
+the same with the sets exchanged. In the remaining case we may assume that `b` has the smaller index, and then `a` is in
+`J'` by the choice of `b'`, is not `b'` since `b' ∈ J`, and precedes `b` in `x^(J')`. Hence the `3 · 2^(n-1) - 3`
+midpoints are distinct. ∎
+
+The two propositions do not settle the worst case over all token automata with `n` live states, the largest number of
+states that the smallest nondeterministic automaton for their complete scans, or for their failed ones, can need. The
+automata `S` and `F` bound that number from above once the states no input reaches are deleted. Let `f >= 1` of the `n`
+live states accept and let `r = n - f`. A transition of `S` exists only when no member of `O'` accepts. In a reachable
+state `(O, q)` with `q` not fresh, therefore, no obligation accepts, and a reachable fresh state other than the initial
+one is `(O' ∪ {q'}, fresh)` with `q'` its only accepting obligation. There are at most `n 2ʳ` states of the first form
+and `f 2ʳ` of the second, so `S` has at most `(n + f)2ʳ + 1` reachable states. A reachable failure state `(O, q, fail)`
+of `F` likewise has no accepting obligation, and its `q` is `⊥` or one of the `r` live states that do not accept, so `F`
+has at most `(r + 1)2ʳ` further reachable states, which makes `(2n + 1)2ʳ + 1`.
+
+Smaller automata accept the same words. Keep the reachable states only, and consider a state `(O, q)` of `S` in which
+`q` is not fresh and `q ∈ O`. A transition from it on a byte `a` has `q' = δ⁺(q, a)` among the members of `O'`, so `q'`
+does not accept and the only successor is `(O', q')`, with `q' ∈ O'` again. No run from such a state reaches a fresh
+state, so no accepting run of `S` visits one, and these states can be deleted. Of the states left that are not fresh, at
+most `f 2ʳ` have an accepting `q`, and at most `r 2^(r-1)` have a `q` that does not accept, since `O` then lies among
+the other `r - 1` states that do not accept. Next, a fresh state other than the initial one is `(O ∪ {q}, fresh)`, where
+`q` is its only accepting obligation and `O` holds the others. It and `(O, q)` have exactly the same predecessor-byte
+pairs, the pairs of a state and a byte from which a transition enters, because every transition to a state `(O', q')`
+with `q'` accepting comes with one from the same state on the same byte to `(O' ∪ {q'}, fresh)`, and no other transition
+leads to a fresh state. The state `(O, q)` was not deleted, since `q` accepts and no member of `O` does. Merge the two
+into one state, final and with the transitions that leave either. The merged state stands for a token that may have
+ended. On the next byte it either continues the token from `q` under the obligations `O`, or commits it and starts the
+next token from `q0` under `O ∪ {q}`. Every accepting run of `S` is one of the merged automaton, and an accepting run of
+the merged automaton lifts to one of `S` from its last state backward. Where the run stands in a merged state, take the
+fresh state if the word ends there and otherwise the one of the two that has the transition the next step uses.
+Whichever is taken, the predecessor and the byte by which the run entered the merged state enter that one as well. The
+merged automaton therefore accepts the completely tokenizable words with at most
+`f 2ʳ + r 2^(r-1) + 1 = (n + f)2^(r-1) + 1` states.
+
+The same two changes apply to the states that `F` shares with `S`. Failure is entered from fresh states only, so a
+deleted state reaches no final state of `F`, and the two states of a merged pair still have the same predecessor-byte
+pairs, neither being final in `F`. In a failure state `(O, q, fail)` the state `q` is followed as the obligations are
+and must never accept. Let `P` be `O` when `q = ⊥` and `O ∪ {q}` otherwise. On a byte `a` the failure state has no
+successor when `δ⁺(p, a)` accepts for some `p ∈ P`, and otherwise a single one, whose set is the set of those `δ⁺(p, a)`
+that are defined. Failure states with the same `P` thus accept the same words from there on and can be merged, which
+leaves at most `2ʳ` of them, one for each set of states that do not accept. The resulting automaton accepts the words
+the scanner does not tokenize completely with at most `(n + f)2^(r-1) + 1 + 2ʳ = (n + f + 2)2^(r-1) + 1` states. Both of
+these bounds are largest at `f = 1`. With Proposition 6, for `n >= 3` the worst case therefore lies between `2ⁿ` and
+`(n + 1)2^(n-2) + 1` for the complete scans, and between `3 · 2^(n-1) - 3` and `(n + 3)2^(n-2) + 1` for the failed ones,
+so the bounds are within the factors `(n + 2)/4` and `(n + 6)/6` of each other.
+
+On the family of Proposition 5, where `f = 2` and `r = k`, these bounds put the smaller automaton for the complete scans
+within a factor of `(n + 2)/2` of the smallest one and that for the failed scans within `(n + 4)/2`. A closer count
+gives the factor `3` for the smaller automata, and two further steps that the family allows bring both within the factor
+`3/2`. An obligation that enters `O` as `q0` outlasts the next symbol only if that symbol is `!`, which takes it to `h`,
+since either letter would lead it to an accepting state. One that enters as `s_1` stands at `s_(i+1)` after `i < k`
+further letters, and after `k` or more it stands at `h` or is gone. A `!` is read only when no obligation stands at `h`,
+which it would return to `q0`, and it removes every obligation in the chain, so every obligation carried across a `!`
+stands at `h` after it. Let `(O, q)` be a reachable state of `S`. If `q = s_j`, the token being read entered `s_1` on an
+`a` and has read `j - 1` letters since. Every obligation was added before that `a` and has read at least `j` letters
+since. One that entered as `s_1` therefore stands beyond `s_j` in the chain or at `h`, and one that entered as `q0`
+stands at `h`, so `O ⊆ {s_(j+1), ..., s_k, h}`, which allows `2^(k-j+1)` sets. If `q = h`, the token came to `h` on a
+`!`, or through the chain on the last of `k + 1` letters, and in both cases `O ⊆ {h}`, which further letters preserve.
+Summed over `j`, and with at most `2ᵏ` sets for `q = q0`, that makes at most `(2^(k+1) - 2) + 2 + 2ᵏ = 3 · 2ᵏ` reachable
+states that are not fresh. A failure state of `F` is entered from a fresh state on a symbol that leads `q0` to no
+accepting state, which here is `!` alone, so it is entered with `q = h` and `O ⊆ {h}`. Letters preserve both, and on a
+further `!` there is no successor, since `h` moves to `q0`, which accepts, so `F` has at most two reachable failure
+states. In the smaller automata every fresh state other than the initial one is merged with a state that is not fresh,
+and of the states that are not fresh `({h}, h)` is deleted, so the automaton for the complete scans has at most
+`3 · 2ᵏ - 1` states beside the initial one. The two failure states have the same set `{h}`. That makes at most `3 · 2ᵏ`
+states for the complete scans and `3 · 2ᵏ + 1` for the failed ones, both less than `3(2ᵏ + 2)`.
+
+The family allows two further steps. An obligation at `h` stays there on a letter and would move to `q0`, which accepts,
+on `!`. A state with `h` among its obligations therefore reads no `!`, and its successors on a letter have `h` among
+theirs. No letter leads `h` or a state of the chain to an accepting state, so on a letter no obligation accepts. In the
+smaller automaton for the complete scans, let such a state have an accepting `q`. On either letter it has a successor of
+the same kind. If `q = q0` the token continues to `q0` or to `s_1`, and if `q = s_1` the token ends there, `s_1` joins
+the obligations, and the next token reads the letter from `q0`. The state thus accepts every word of letters and no
+other word, and all these states are merged into one. If `q` does not accept, it is not `h`, since `({h}, h)` is
+deleted, so it lies in the chain beyond `s_1`, from where the letters lead along the chain and to `h`, so every
+successor is of this second kind, no final state is reached, and the state is deleted. In the automaton for the failed
+scans every state shared with `S` that has `h` among its obligations is deleted, since such a state reads no `!` and
+failure is entered on `!` only. In both automata the initial state and `(∅, q0)` have the same successors and are
+merged, both being final in the first automaton and neither in the second. A token that ends at `q0` leaves an
+obligation that either letter leads to an accepting state and that `!` leads to `h`, where the next token then stands as
+well, and a failure entered there has the set `{h}` as one entered from the initial state has. Of the states left, at
+most `2^(k-1)` have `q = q0` and at most `2^(k-j)` have `q = s_j`, their obligations lying among `s_(j+1), ..., s_k`,
+and one has `q = h`. These are at most `3 · 2^(k-1)` states, the initial state being `(∅, q0)` among them. With the
+state merged from those that accept the words of letters, the automaton for the complete scans has at most
+`3 · 2^(k-1) + 1` states, and with the failure state in its place so has the automaton for the failed scans. Both counts
+are less than `(3/2)(2ᵏ + 2)`.
+
+The two propositions concern automata for the scans and say nothing about a decision procedure of another shape. By
+Theorem 6, a polynomial-time decision procedure for general token automata exists only if P equals PSPACE. Both bounds
+are measured in the size of the compiled automaton. Where the tokens are listed, the obligations collapse.
+
+**Theorem 7 (literal vocabularies).** Let the tokens be a finite list of nonempty words with kinds, equal words resolved
 by priority. Then whether `b` is safe modulo `I` is decidable in time polynomial in the total length of the words, `|Σ|`
 and `|T|`, with a replayable counterexample when it is not.
 
@@ -906,7 +1356,7 @@ buffer alone, as the scanner does at end of input. Hence `B` emits `code(π_I(to
 when `w` is completely tokenizable.
 
 `B` has `P + 1` states. A transition commits at most `L + 1` bytes, so it emits at most `L + 1` tokens, whose codes have
-at most `2(L + 1)` letters together; the flush is bounded the same way. Run two copies on the marked inputs `M_b` with
+at most `2(L + 1)` letters together. The same bounds hold for the flush. Run two copies on the marked inputs `M_b` with
 an explicit end marker: the whole copy ignores `#`, the split copy flushes at `#` and restarts empty, and both flush at
 the end. A failed whole copy is dropped, since no continuation makes the input completely tokenizable. A failed split
 copy is kept as an absorbing state, so that a path reaching a successful whole flush with a failed split copy is a
@@ -1059,6 +1509,8 @@ rule. As a regression check, the copy reproduces the counts 265, 97 and 99 that 
 draw before release 2.2.0 replaced it. The exact decision is likewise a program beside the library, written from Section
 5.2, and its negative answers are checked by the scanner itself, since every counterexample is replayed before it is
 counted. Its positive answers rest on Theorem 5 and are checked against the oracle wherever the oracle has a verdict.
+The library's own `modulo_counterexample()`, in release 3.1.0, implements the same decision within a cap on the states
+each search holds, and takes no part in this sweep.
 
 ## 7 Applicability
 
@@ -1072,7 +1524,7 @@ named. The conventional and split-friendly rows recognize the same byte language
 and the block-comment row directly after them adds one token kind to the split-friendly grammar, so those three are read
 together.
 
-The program that produces the table is `figures/applicability.cpp`, archived with this paper; it links the library and
+The program that produces the table is `figures/applicability.cpp`, archived with this paper. It links the library and
 asserts every row, with one qualification for the two rows that restate grammars living in the benchmark tool. For the
 scaling grammar the probe compiles the real `build_lexer(false)` beside its transcription and checks agreement on all
 256 certified bits and on the exact token lengths of a corpus. The exact certified bitset and the sample token lengths
@@ -1124,8 +1576,8 @@ row spells each operator as a single byte, so each is consumed only at the initi
 Section 8 measures two different C-like grammars, and the last two rows of Table 2 name each by its builder function,
 since they disagree. The construction-cost grammar, `keyword_scale_builder()` in `tools/benchmark/src/main.cpp`, spells
 operators as literals including `++`, `==` and `->` and admits a decimal point inside a number. Every byte occurring
-after the first position of some operator is consumed by a live mid-token state, and seven candidates fall that way:
-`= < > & | + -`. The decimal point falls independently, because `decimal_float()` admits it inside a number, bringing
+after the first position of some operator is consumed by a live mid-token state, so the seven candidates `= < > & | + -`
+fail to certify. The decimal point falls independently, because `decimal_float()` admits it inside a number, bringing
 the total to eight. The scaling grammar, `build_lexer(false)` in `tools/benchmark/src/harness.cpp`, has a smaller
 operator set in which every multi-byte operator has `=` as its only continuation byte, so only `=` is lost and thirteen
 of its fourteen candidates certify. Both collapses are partial. They show that "operators certify" is a claim about the
@@ -1138,7 +1590,7 @@ input and differ only in whether newline is folded into the whitespace run or ca
 certifies nothing while the second certifies newline. The kinds differ by that one token, which is the change under
 study.
 
-All three mechanisms point at the same design lever: certification is a property of the *tokenization* rather than an
+All three mechanisms point at the same design lever. Certification is a property of the *tokenization* rather than an
 intrinsic property of the recognized language, and a tokenization can sometimes be refactored without changing what is
 recognized at all. The split-friendly row of Table 2 keeps the identical C-like language but tokenizes newline as its
 own single-byte token, leaves spaces and tabs as whitespace runs, and keeps strings and line comments line-bounded. The
@@ -1236,7 +1688,7 @@ whitespace minus space follows from the RFC's own exclusion. The rows carrying u
 hold no useful certificate, because a comment severed at a newline leaves `/* a` and `b */`, and both halves re-tokenize
 completely. In this token set the halves become the operators `/` and `*` and an identifier, six kept tokens in place of
 one discarded comment, which is the difference a caller can see. The correct conclusion carries the certificate's own
-scope: on completely tokenizable inputs, this tokenization of a C-like language with unrestricted block comments cannot
+scope. On completely tokenizable inputs, this tokenization of a C-like language with unrestricted block comments cannot
 be split at every occurrence of a byte value chosen from the grammar alone, newline included, without state, overlap,
 speculation or repair, and the certificate says so. Schemes that inspect the document and split at some occurrences but
 not others are outside the claim.
@@ -1245,8 +1697,8 @@ Four rows are cross-checked by splitting as well as by reading the predicate: th
 pair, the split-friendly row with block comments, and JSON. On those rows the condition agrees with brute-force
 splitting on every candidate byte the corpus exercises. These candidates are a declared set of sixteen bytes, not all
 256: the four whitespace bytes, eleven representative structural characters and the letter `t`. The corpus check is
-weaker than the exact decision above and predates it; it is kept because it exercises the scanner on documents, whereas
-the decision reads the tables.
+weaker than the exact decision above and predates it. The check is kept because it exercises the scanner on documents,
+whereas the decision reads the tables.
 
 The practical content is narrower than a count of moved cells suggests, and more useful. The exact certificate already
 admitted newline for the split-friendly tokenization in which newline is its own token and whitespace runs exclude it.
@@ -1440,7 +1892,7 @@ passes. It is not the median of the per-round paired ratios, which would weight 
 medians summarizes each scenario first. The harness neither prints nor asserts the ratios, which are recomputed from the
 archived per-scenario medians, so the archive carries the checkable numbers and the divisions are ours. The two do
 diverge: at 512 MiB pinned, two chunks over one is 1.96× as a ratio of medians and 1.99× as a median of paired ratios.
-The paired view appears below only as same-round win counts; paired medians are not reported.
+Below, paired results are reported only as same-round win counts.
 
 On Environment B at 512 MiB the comparison between the plain scan and the one-chunk row moves between collections far
 more than any efficiency or multi-chunk row does. Three reported comparisons on the dense corpus show how far it moves:
@@ -1520,23 +1972,27 @@ also specifies the concatenated token sequence, not callback interleaving, so th
 and order-sensitive effects need per-chunk buffering followed by ordered replay.
 
 The approach trades generality for certainty. When the grammar does not cooperate it offers no usable split points, by
-design, and the composition and speculation families of Section 2 remain the applicable answers we know of. The exact
-decision of Section 5.2 has polynomial space as an upper bound, and no lower bound is shown here. Whether a polynomial
-algorithm exists for a general token automaton, and whether the question is PSPACE-hard, are open. Several extensions
-look natural, and the first has since been carried out. A companion paper generalizes the certificate from single bytes
-to short byte windows, certifying a cut at a fixed offset inside every occurrence of a multi-byte string, which recovers
-splitting for some grammars where no single byte certifies ([arXiv:2608.09761](https://arxiv.org/abs/2608.09761)). The
-certificate of this paper is exactly its length-one case. A hybrid plan could split at certified bytes where they exist
-and fall back to speculative entry elsewhere, keeping the guarantee where it is free and paying for it only where it is
-not. On completely tokenizable input, a candidate scan begun in a live state cannot emit a token crossing the cut
-immediately before a certified occurrence, since an emitted token's match path lies in live states and only a
-non-re-entrant `q0` consumes the certified symbol among them. If such a scan commits emitted tokens past the occurrence,
-it places a boundary there. The serial scan places the same boundary, and both restart in `q0` at it, so their
-continuations agree when run over the same remaining input. Whether a concrete speculative protocol can exploit this to
-confine misprediction repair to the gap before the next certified occurrence is future work, as is the distribution of
-such gaps over representative corpora. The grammar-refactoring lever of Section 7 could be automated as a search, under
-a stated observational equivalence and edit-cost metric, for a minimum-cost re-tokenization that makes a chosen byte
-usefully certify.
+design, and the composition and speculation families of Section 2 remain the applicable answers we know of. Safety
+modulo `I`, which the exact decision of Section 5.2 settles, is PSPACE-complete for general token automata by Theorem 6,
+so a polynomial algorithm for it exists only if P equals PSPACE. The hard instances encode a family of automata in their
+discarded tokens and resemble none of the fifteen token sets studied here. For literal vocabularies, safety modulo `I`
+is decidable in polynomial time by Theorem 7.
+
+Several extensions look natural, and the first has since been carried out. A companion paper generalizes the certificate
+from single bytes to short byte windows, certifying a cut at a fixed offset inside every occurrence of a multi-byte
+string, which recovers splitting for some grammars where no single byte certifies
+([arXiv:2608.09761](https://arxiv.org/abs/2608.09761)). The useful certificate of this paper is exactly the length-one
+case of the companion's window model. A hybrid plan could split at certified bytes where they exist and fall back to
+speculative entry elsewhere, keeping the guarantee where it is free and paying for it only where it is not. On
+completely tokenizable input, a candidate scan begun in a live state cannot emit a token crossing the cut immediately
+before a certified occurrence, since an emitted token's match path lies in live states and only a non-re-entrant `q0`
+consumes the certified symbol among them. If such a scan commits emitted tokens past the occurrence, it places a
+boundary there. The serial scan places the same boundary, and both restart in `q0` at it, so their continuations agree
+when run over the same remaining input. Whether a concrete speculative protocol can exploit this to confine
+misprediction repair to the gap before the next certified occurrence is future work, as is the distribution of such gaps
+over representative corpora. The grammar-refactoring lever of Section 7 could be automated as a search, under a stated
+observational equivalence and edit-cost metric, for a minimum-cost re-tokenization that makes a chosen byte usefully
+certify.
 
 The certificate is also orthogonal to a separate worst-case cost of naive longest-match scanning. Some token sets and
 inputs cause failed lookahead that grows at successive token starts, producing `Θ(N²)` work, while bounded failed
@@ -1670,7 +2126,7 @@ certificate speaks of sources, requires that `q0` is not re-entrant, and is take
 where an untrimmed presentation's dead and unreachable states, and any equivalent copies of live states it carries, can
 only enlarge their count.
 
-**Deciding the relaxed question.** Yang (Computer Languages 1996) observes that an object composed for maximal-munch
+**Deciding the exact question.** Yang (Computer Languages 1996) observes that an object composed for maximal-munch
 lexing must carry token output and lookahead as well as a map on states. The complete-scan automaton of Section 5.2 is
 that object built directly for one scan. Its obligation sets carry exactly the lookahead a longest-match decision still
 depends on, and the `z^ℓ K_t` coding carries the output without storing a length. The failure automaton beside it
@@ -1678,8 +2134,12 @@ recognizes the words the scanner rejects by a direct construction, without compl
 delays is elementary, and we claim no priority for it or for the automata; the proofs are included so that the result is
 checkable without further reading. Specific to this paper is the question they decide: a cut's safety at every
 occurrence of a byte, together with the chunk-completeness obligation that Definition 5 carries and an output comparison
-alone would miss. The decision is a check at construction, like the certificate, but its bound is exponential where the
-certificate's is linear, and it ships as a figure program outside the library.
+alone would miss. The library computes the exact certificate at construction, by a linear-time analysis of the
+transition table, and does not run the decision there. The decision's cost is singly exponential in `n` in the worst
+case, as Theorem 5 bounds it, and release 3.1.0 of munch runs it only when a caller asks, as `modulo_counterexample()`,
+for one symbol and one discarded set at a call and within a cap on the states each search holds. The result reports
+whether the searches settled the question or the cap stopped one. The implementation behind the results reported here
+ships as a figure program outside the library.
 
 **Chosen cut points.** Two lines outside compiler construction, content-defined chunking and document fingerprinting,
 choose positions in a byte stream by rules of their own, with objectives other than lexical safety. Bjørner, Blass and
@@ -1713,8 +2173,9 @@ reachable state, and the token continues only if that target has an outgoing tra
 every mid-token context that can arise on any input whatsoever. For this token set there is exactly one, the interior of
 a block comment, since every in-comment state moves to the same target on a newline, and the initial state produces a
 complete newline token that cannot continue. A line start presents one of two entry contexts, that comment-interior
-state and the boundary, against an automaton of fourteen states. The conventional tokenization gives three, since a
-whitespace run may also be open across a line start, and neither count is close to the state count.
+state and the boundary, against an automaton of fourteen states. The conventional tokenization of the same three kinds,
+block comment included, gives three, since a whitespace run may also be open across a line start, and neither count is
+close to the state count.
 
 Most line starts are already token boundaries, though nothing short of the scan identifies which. On a corpus of 400
 generated documents no failed lookahead after a token's final accepted position crossed a line end. The counter in
@@ -1726,13 +2187,13 @@ which also checks that the contexts a corpus realizes lie inside the structural 
 section names.
 
 The comparison should be drawn narrowly. The counts are a structural upper bound on the *entry contexts* a line start
-can present, two here and three for the conventional tokenization, and they bound only the state component of the object
-a prefix scan for maximal-munch lexing composes over. Yang (Computer Languages 1996) gives the reason: such a scan must
-represent token output and lookahead behavior as well as a map from states to states, and an automaton unable to
-recognize a token's start from its first character must be transformed before the scan applies. Nothing here implements
-a prefix scan or measures its time, memory, function representation or output handling, so this is not evidence about
-the cost of composition as a whole. Composition is also available wherever the certificate reports nothing, which is the
-larger class.
+can present, two here and three for the conventional tokenization with block comments, and they bound only the state
+component of the object a prefix scan for maximal-munch lexing composes over. Yang (Computer Languages 1996) gives the
+reason: such a scan must represent token output and lookahead behavior as well as a map from states to states, and an
+automaton unable to recognize a token's start from its first character must be transformed before the scan applies.
+Nothing here implements a prefix scan or measures its time, memory, function representation or output handling, so this
+is not evidence about the cost of composition as a whole. Composition is also available wherever the certificate reports
+nothing, which is the larger class.
 
 Certified splitting requires no full-input state-composition pass, and the claim needs care because chunks are not
 serialized. Mytkowicz et al. (ASPLOS 2014) dispatch every chunk in parallel during a first phase to build its transfer
@@ -1749,8 +2210,8 @@ A byte `b` is a certified split symbol of a compiled token set when no reachable
 `b`-transition whose target can reach acceptance, and, if `q0` has one, `q0` is not re-entrant. Every occurrence of such
 a byte in a completely tokenizable input begins a token, so chunk boundaries placed there preserve the token stream
 exactly, with no speculation, no overlapping chunk scans, and no merge beyond ordered concatenation. The re-entrancy
-clause is needed for this, since without it the natural incoming-transition criterion certifies `a` for the token set
-`a*` and splits `aa` into two tokens where the scanner yields one.
+clause is needed for this, since without it the natural criterion, that no live state other than `q0` consumes the byte,
+certifies `a` for the token set `a*` and splits `aa` into two tokens where the scanner yields one.
 
 The condition is necessary as well as sufficient once the analysis is restricted to states an input can reach and from
 which acceptance is still reachable. A token set with no useful certified byte therefore has no byte that both occurs in
@@ -1779,8 +2240,8 @@ studied here and a JSON lexer both gain newline without any change to their toke
 redesign that the exact method had imposed on its users. Both local tests are conservative, and the exact decision
 measures by how much. Of the 360 pairs of symbol and token set the fixed seeded sweep finds safe, the state-equality
 condition admits 265 and the coalesced test 306. A named token set is safe yet certified by neither. The exact question
-is decidable all the same. Safety modulo the discarded set lies in PSPACE for every token automaton and is decided in
-polynomial time for a vocabulary of literals. Wherever it fails, an input and a cut replay the failure. On the fifteen
+is decidable all the same. Safety modulo the discarded set is PSPACE-complete for general token automata and decidable
+in polynomial time for literal vocabularies. Wherever it fails, an input and a cut replay the failure. On the fifteen
 token sets of the applicability study the decision confirms every cell of the relaxed column, so there the local tests
 give nothing away. The relaxed result remains a precomputed one-bit query; the shipped planner and every throughput
 measurement use the exact certificate.
@@ -1801,6 +2262,8 @@ certified bytes are scarce, which Section 8.2 measures.
 
 - N. Nidhögg. *munch: a lexical analysis library based on automata theory, version 1.2.0.* Release tag `v1.2.0`,
   archived at doi:10.5281/zenodo.21752997, 2026.
+- N. Nidhögg. *munch: a lexical analysis library based on automata theory, version 3.1.0.* Release tag `v3.1.0`,
+  archived at doi:10.5281/zenodo.24220471, 2026.
 - N. Nidhögg. *Certified Split Windows for Parallel Lexing: Recovering Boundaries Where No Byte Certifies.* Preprint,
   arXiv:2608.09761, 2026.
 - N. Nidhögg. *Certified Panic Mode: Repair-Invariant Error Recovery for Maximal-Munch Lexing.* Preprint,
@@ -1864,6 +2327,7 @@ certified bytes are scarce, which Section 8.2 measures.
 - F. Yergeau. *UTF-8, a transformation format of ISO 10646.* RFC 3629, STD 63, November 2003.
 - S. Chassot, V. Kunčak. *Formally Verified Linear-Time Invertible Lexing.* CAV 2026, LNCS 16683, 141-164. Extended
   version with the separator-token appendix: arXiv:2510.18479.
+- D. Kozen. *Lower Bounds for Natural Proof Systems.* FOCS 1977, 254-266.
 - T. Bray (Ed.). *The JavaScript Object Notation (JSON) Data Interchange Format.* RFC 8259, STD 90, December 2017.
 - V. Cerf. *ASCII format for Network Interchange.* RFC 20, 1969.
 - N. Williams. *JavaScript Object Notation (JSON) Text Sequences.* RFC 7464, 2015.
