@@ -1,5 +1,9 @@
 name: CI
 
+# The work CI, on every push to master and every pull request into it: formatting, the commits the documentation names,
+# the generated tables, the bundled grammars against their generators, the strict GCC, Clang, ARM64 and CMake floor
+# builds with the whole test suite, and the install and subdirectory consumers. Coverage, the sanitizers and the long
+# fuzz runs are the release CI, in release-ci.yml.
 on:
   push:
     branches: [ "master" ]
@@ -80,7 +84,7 @@ jobs:
       - name: Run tests with CTest
         run: |
           cd build
-          ctest --output-on-failure
+          ctest -j4 --output-on-failure
 
   build-and-test-strict:
     runs-on: ubuntu-24.04
@@ -119,7 +123,7 @@ jobs:
       - name: Run tests with CTest
         run: |
           cd build
-          ctest --output-on-failure
+          ctest -j4 --output-on-failure
 
   build-and-test-arm:
     runs-on: ubuntu-24.04-arm
@@ -153,7 +157,7 @@ jobs:
       - name: Run tests with CTest
         run: |
           cd build
-          ctest --output-on-failure
+          ctest -j4 --output-on-failure
 
   # No macOS job: it requires an Apple toolchain whose libc++ ships std::jthread, which none does, Xcode 26
   # included, and the parallel scan keeps jthread rather than take platform conditionals. The mdspan
@@ -193,7 +197,7 @@ jobs:
       - name: Run tests with CTest
         run: |
           cd build
-          ../cmake-3.20.6-linux-x86_64/bin/ctest --output-on-failure
+          ../cmake-3.20.6-linux-x86_64/bin/ctest -j4 --output-on-failure
 
       - name: Check every declared minimum matches the version this job tests
         # Without this coupling the job proves only that 3.20.6 works, not that the tree declares it: a
@@ -213,109 +217,6 @@ jobs:
             echo "a declaration is not exactly the minimum this job tests"
             exit 1
           fi
-
-  sanitize:
-    runs-on: ubuntu-24.04
-
-    permissions:
-      contents: read
-
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          # Address and undefined-behavior sanitizers watch the table arithmetic; the thread sanitizer watches
-          # the parallel scan.
-          - name: address-undefined
-            flags: -fsanitize=address,undefined -fno-sanitize-recover=all
-          - name: thread
-            flags: -fsanitize=thread
-
-    name: sanitize (${{ matrix.name }})
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Install dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y clang-19 ninja-build
-
-      - name: Configure build with CMake
-        env:
-          CC: clang-19
-          CXX: clang++-19
-        run: |
-          mkdir build
-          cd build
-          cmake -G Ninja .. -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_FLAGS="${{ matrix.flags }}" \
-                -DMUNCH_BUILD_BENCHMARK=OFF
-
-      - name: Build with CMake
-        run: |
-          cd build
-          cmake --build .
-
-      - name: Run tests with CTest
-        run: |
-          cd build
-          ctest --output-on-failure
-
-  fuzz:
-    runs-on: ubuntu-24.04
-
-    permissions:
-      contents: read
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Install dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y clang-19 ninja-build
-
-      - name: Configure build with CMake
-        env:
-          CC: clang-19
-          CXX: clang++-19
-        run: |
-          mkdir build
-          cd build
-          cmake -G Ninja .. -DCMAKE_BUILD_TYPE=Release -DMUNCH_BUILD_FUZZER=ON \
-                -DMUNCH_BUILD_TESTS=OFF -DMUNCH_BUILD_BENCHMARK=OFF
-
-      - name: Build with CMake
-        run: |
-          cd build
-          cmake --build .
-
-      # A bounded smoke run each push; crashes and invariant violations reproduce from the printed input.
-      - name: Fuzz the builder and scan invariants
-        run: |
-          mkdir corpus
-          # print_new_funcs=0: symbolizing each newly covered function costs a symbolizer spawn per function and
-          # adds nothing here; crash reports are still symbolized.
-          ./build/tools/fuzz/munch_builder_fuzzer corpus -max_total_time=60 -timeout=10 -rss_limit_mb=4096 \
-                -print_new_funcs=0
-
-      # The raw string scanner is the one hand-written pointer walk over untrusted input in the tree, so it gets its
-      # own target rather than sharing the builder's corpus, whose inputs decode as grammars and not as literals.
-      - name: Fuzz the raw string scanner
-        run: |
-          mkdir raw-string-corpus
-          ./build/tools/fuzz/munch_raw_string_fuzzer raw-string-corpus -max_total_time=60 -timeout=10 \
-                -rss_limit_mb=4096 -print_new_funcs=0
-
-      # The verifier decisions are held to brute force over every short marked string of a three-byte alphabet, so
-      # their corpus decodes as token sets, piece sets and windows and is kept apart from the others.
-      - name: Fuzz the verifier decisions against brute force
-        run: |
-          mkdir verifier-corpus
-          ./build/tools/fuzz/munch_verifier_fuzzer verifier-corpus -max_total_time=60 -timeout=10 \
-                -rss_limit_mb=4096 -print_new_funcs=0
 
   grammars-generate:
     runs-on: ubuntu-24.04
@@ -608,81 +509,3 @@ jobs:
           cmake -G Ninja -S consumer -B consumer/build -DCMAKE_BUILD_TYPE=Release
           cmake --build consumer/build
           ./consumer/build/consumer
-
-  build-and-test:
-    runs-on: ubuntu-24.04
-
-    permissions:
-      contents: read
-      pull-requests: write
-
-    steps:
-      - name: Print OS details
-        run: |
-          uname -a
-          lsb_release -a
-
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Install dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y gcovr ninja-build
-
-      - name: Check GCC and gcovr version
-        run: |
-          g++ --version
-          gcov --version
-          gcovr --version
-
-      - name: Configure build with CMake
-        env:
-          CC: gcc
-          CXX: g++
-        run: |
-          mkdir build
-          cd build
-          # tokenize_all_parallel() runs the scan on several threads, and gcov's counters are not atomic by
-          # default, so concurrent updates corrupt them into negative branch counts (GCC bug 68080).
-          cmake -G Ninja .. -DCMAKE_BUILD_TYPE=Debug \
-                -DCMAKE_CXX_FLAGS="--coverage -fprofile-abs-path -fprofile-update=atomic" \
-                -DMUNCH_BUILD_BENCHMARK=OFF
-
-      - name: Build with CMake
-        run: |
-          cd build
-          cmake --build .
-
-      - name: Run tests with CTest
-        run: |
-          cd build
-          ctest --output-on-failure
-
-      - name: Generate code coverage report
-        run: |
-          cd build
-
-          # Each pattern is unanchored on both ends: gcovr matches --exclude against a path that may or may not
-          # have a leading directory component (e.g. "_deps/..." from one root, "build/_deps/..." from another),
-          # so a pattern requiring a literal leading "/" silently fails to match the no-prefix case.
-          EXCLUDES=(
-            --exclude '(.*/)?external/.*'
-            --exclude '(.*/)?_deps/.*'
-            --exclude '(.*/)?tests/.*'
-            --exclude '(.*/)?tools/benchmark/.*'
-            --exclude '(.*/)?tools/probes/.*'
-            --exclude '(.*/)?CMakeFiles/.*'
-          )
-
-          gcovr --root .. --gcov-executable gcov --xml-pretty --output coverage.xml "${EXCLUDES[@]}"
-          gcovr --root .. --gcov-executable gcov --html --html-details --output coverage.html "${EXCLUDES[@]}"
-          gcovr --root .. --gcov-executable gcov --txt-metric branch --print-summary "${EXCLUDES[@]}"
-
-      - name: Upload coverage reports to Codecov
-        uses: codecov/codecov-action@v5
-        with:
-          files: build/coverage.xml
-          flags: unittests
-          fail_ci_if_error: true
-          token: ${{ secrets.CODECOV_TOKEN }}
