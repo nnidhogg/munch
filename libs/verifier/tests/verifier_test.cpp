@@ -5564,7 +5564,7 @@ TEST(Verifier_test, Right_context_gives_the_least_threshold_and_period_and_every
     // c fails exactly when n = c is not a member, since a longer member always exists, and its shortest truncation is
     // the least member above c. Where every n of the period is a member the right context is finite, and otherwise the
     // least period and threshold of the non-members, every failing context below the threshold and every failing
-    // residue from it are held to the pattern itself, each truncation and lasso replayed.
+    // residue from it, both ascending, are held to the pattern itself, each truncation and lasso replayed.
     std::mt19937 sequence{0x5EEDU};
 
     std::size_t finite{0};
@@ -5701,6 +5701,8 @@ TEST(Verifier_test, Right_context_gives_the_least_threshold_and_period_and_every
         EXPECT_EQ(least_found, std::optional{least}) << name;
 
         expect_failing(failing, threshold);
+
+        EXPECT_TRUE(std::ranges::is_sorted(residues, std::ranges::less{}, &Truncation_lasso::context)) << name;
 
         std::set<std::size_t> failing_residues{};
 

@@ -119,9 +119,10 @@ std::size_t cut_of(const Cut_evidence& evidence, const std::size_t size)
 }
 
 /**
- * @brief Checks a plan of a text under a table: the chunks cover the text in order, each cut is the one its evidence
- *        places, a boundary of the text's encoding, and every window within the budget and inside the text, and each
- *        worker's encoding of the bytes it reads, kept below its cut, is the text's encoding of its chunk.
+ * @brief Checks a plan of a text under a table: the chunks cover the text in order, each nonempty unless the text is,
+ *        each cut is the one its evidence places, a boundary of the text's encoding, and every window within the budget
+ *        and inside the text with its origin a byte of the window, and each worker's encoding of the bytes it reads,
+ *        kept below its cut, is the text's encoding of its chunk.
  * @param merges The merge table in rank order.
  * @param text The text.
  * @param plan The plan.
@@ -158,7 +159,7 @@ void expect_true_cuts(
             EXPECT_EQ(begin, chunks[index - 1].owned_end) << chunk_context;
         }
 
-        EXPECT_LT(begin, std::max(owned_end, begin + 1)) << chunk_context;
+        EXPECT_TRUE(text.empty() || begin < owned_end) << chunk_context;
         EXPECT_LE(owned_end, read_end) << chunk_context;
         EXPECT_LE(read_end, text.size()) << chunk_context;
         EXPECT_EQ(cut_of(evidence, text.size()), owned_end) << chunk_context;
@@ -167,6 +168,7 @@ void expect_true_cuts(
         {
             const auto& [window_begin, width, origin]{std::get<Certified_window>(evidence)};
 
+            EXPECT_LT(origin, width) << chunk_context;
             EXPECT_LE(width, budget) << chunk_context;
             EXPECT_LE(window_begin + width, text.size()) << chunk_context;
         }
@@ -293,6 +295,31 @@ std::vector<Merge> random_table(std::mt19937& sequence)
 }
 
 /**
+ * @brief Returns whether an occurrence of a piece in a text straddles a position, beginning before it and ending past
+ *        it.
+ * @param pieces The pieces.
+ * @param text The text.
+ * @param position The position, the index of the first byte after it.
+ * @return True when some occurrence straddles the position.
+ */
+bool is_straddled(const std::vector<std::string>& pieces, const std::string_view text, const std::size_t position)
+{
+    const auto straddles{[&](const std::string& piece) {
+        for (auto at{text.find(piece)}; at != std::string_view::npos && at < position; at = text.find(piece, at + 1))
+        {
+            if (at + piece.size() > position)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }};
+
+    return std::ranges::any_of(pieces, straddles);
+}
+
+/**
  * @brief Returns the segmentation a forward Viterbi pass picks for a text in exact arithmetic: at each position, over
  *        the pieces in order, a path replaces the best one ending there only on a strictly greater score, a token's
  *        score summed along the path.
@@ -350,9 +377,9 @@ std::optional<std::vector<std::string>> viterbi(
 }
 
 /**
- * @brief Checks a plan of a text over a piece set: the chunks cover the text in order, each cut a straddle-free
- *        position of the text read to and no further, its evidence naming it, and each chunk segmented alone by the
- *        exact Viterbi pass gives the tokens the pass gives the whole text there.
+ * @brief Checks a plan of a text over a piece set: the chunks cover the text in order, each nonempty unless the text
+ *        is, each cut a position no occurrence of a piece straddles, read to and no further, its evidence naming it,
+ *        and each chunk segmented alone by the exact Viterbi pass gives the tokens the pass gives the whole text there.
  * @param pieces The pieces.
  * @param scores The score of each piece, by its place among the pieces.
  * @param text The text, which the pieces spell.
@@ -371,8 +398,6 @@ void expect_optimal_chunks(
     EXPECT_TRUE(std::holds_alternative<Input_end>(chunks.back().evidence)) << context;
     EXPECT_EQ(plan.windows_asked, 0U) << context;
 
-    const auto cuts{piece_set(pieces).straddle_free(text)};
-
     std::vector<std::string> stitched{};
 
     for (std::size_t index{0}; index < chunks.size(); ++index)
@@ -386,13 +411,14 @@ void expect_optimal_chunks(
             EXPECT_EQ(begin, chunks[index - 1].owned_end) << chunk_context;
         }
 
+        EXPECT_TRUE(text.empty() || begin < owned_end) << chunk_context;
         EXPECT_EQ(read_end, owned_end) << chunk_context;
 
         if (index + 1 < chunks.size())
         {
             ASSERT_TRUE(std::holds_alternative<Straddle_free_cut>(evidence)) << chunk_context;
             EXPECT_EQ(std::get<Straddle_free_cut>(evidence).position, owned_end) << chunk_context;
-            EXPECT_TRUE(std::ranges::binary_search(cuts, owned_end)) << chunk_context;
+            EXPECT_FALSE(is_straddled(pieces, text, owned_end)) << chunk_context;
         }
 
         const auto alone{viterbi(pieces, scores, text.substr(begin, owned_end - begin))};

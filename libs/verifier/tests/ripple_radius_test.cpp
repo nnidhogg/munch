@@ -1481,10 +1481,42 @@ void expect_graphs_alike(
 }
 
 /**
+ * @brief Returns the rank of a table's first effective self-pair as the reference encoder finds it: the lowest rank of
+ *        a merge with equal parts whose two copies the merges before it encode as two tokens.
+ * @param merges The merge table in rank order.
+ * @param reading How the texts are read, by bytes or by characters.
+ * @return The rank, or std::nullopt when no merge is an effective self-pair.
+ */
+std::optional<std::size_t> first_effective_self_pair(const std::vector<Merge>& merges, const Reading reading)
+{
+    for (std::size_t rank{0}; rank < merges.size(); ++rank)
+    {
+        const auto& [left, right]{merges[rank]};
+
+        if (left != right)
+        {
+            continue;
+        }
+
+        const std::vector<Merge> before{merges.begin(), merges.begin() + static_cast<std::ptrdiff_t>(rank)};
+
+        const auto pair_text{left + right};
+        const auto encoding{reference_tokens(before, symbols_of(reading, pair_text))};
+
+        if (encoding == std::vector{left, right})
+        {
+            return rank;
+        }
+    }
+
+    return std::nullopt;
+}
+
+/**
  * @brief Checks a table's decision over the live and the stopped graph against the full product: the two alike, an
- *        infinite radius exactly when the product's marked part holds a cycle, with the first effective self-pair
- *        replayed and pumped, and otherwise every value and witness equal to the product's to the byte, both witnesses
- *        replayed against the reference encoder.
+ *        infinite radius exactly when the product's marked part holds a cycle, with the first effective self-pair at
+ *        the reference encoder's rank, replayed and pumped, and otherwise every value and witness equal to the
+ *        product's to the byte, both witnesses replayed against the reference encoder.
  * @param merges The merge table in rank order, admissible.
  * @param reading How the texts are read.
  * @param alphabet The alphabet, UTF-8, read over the characters only.
@@ -1511,6 +1543,8 @@ bool expect_decided_as_the_full_product(
 
         if (self_pair)
         {
+            EXPECT_EQ(std::optional{self_pair->rank}, first_effective_self_pair(merges, reading)) << context;
+
             expect_effective_self_pair(merges, reading, self_pair->rank, context);
         }
 
@@ -1716,6 +1750,21 @@ TEST(Ripple_radius_test, One_merge_over_a_is_infinite_at_its_own_rank)
     EXPECT_EQ(rank, 0U);
 
     expect_effective_self_pair(merges, Reading::bytes, 0, "one merge over a");
+}
+
+TEST(Ripple_radius_test, Of_two_effective_self_pairs_the_lower_rank_is_the_witness)
+{
+    // No merge before either joins its two copies, so (a, a) and (b, b) are both effective, and the first is named.
+    const std::vector<Merge> merges{{.left = "a", .right = "a"}, {.left = "b", .right = "b"}};
+
+    const auto found{ripple_radius(merges)};
+
+    ASSERT_TRUE(std::holds_alternative<Effective_self_pair>(found));
+    const auto [rank]{std::get<Effective_self_pair>(found)};
+
+    EXPECT_EQ(rank, 0U);
+
+    EXPECT_FALSE(expect_decided_as_the_full_product(merges, Reading::bytes, {}, table_text(merges)));
 }
 
 TEST(Ripple_radius_test, A_proper_ordered_table_moves_every_covering_token_of_b_followed_by_ab_repeated)
