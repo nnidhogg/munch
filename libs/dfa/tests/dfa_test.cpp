@@ -4247,6 +4247,13 @@ TEST(Dfa_test,
     EXPECT_FALSE(withheld_settled);
     EXPECT_TRUE(withheld.empty());
     EXPECT_FALSE(withheld_side.has_value());
+
+    // Under a cap of one both searches find their witness on the start's first byte, 0x80, which only {0x80} tokenizes,
+    // and 0xFF, which only {0xFF} does, so the question settles, the first set's witness winning the tie.
+    const Simulator low{literal_tokens({{"\x80", 1}})};
+    const Simulator high{literal_tokens({{"\xFF", 1}})};
+
+    expect(domain_difference(low, high, 1), "\x80", Tokenizing_side::first, "{0x80} against {0xFF} under a cap of one");
 }
 
 TEST(Dfa_test, Domain_difference_returns_the_shortest_input_one_token_set_tokenizes_as_enumerating_inputs_finds_it)
@@ -4500,6 +4507,12 @@ TEST(Dfa_test, Modulo_counterexample_decides_the_split_points_papers_examples_an
     const Simulator prefixed{literal_tokens({{"a", 1}, {"ab", 1}})};
 
     expect(modulo_counterexample(prefixed, 'b', none), "ab", 1, Cut_failure::right_incomplete, "b over a and ab");
+
+    // On a tie the left chunk's witness is taken: over b, c, abb and cbx the cut before the b at offset one fails in
+    // abb, whose chunk a does not scan, and in cbx, whose chunk bx does not, both three bytes long.
+    const Simulator tied{literal_tokens({{"b", 1}, {"c", 1}, {"abb", 1}, {"cbx", 1}})};
+
+    expect(modulo_counterexample(tied, 'b', none), "abb", 1, Cut_failure::left_incomplete, "b over b, c, abb, cbx");
 
     const Simulator doubled{literal_tokens({{"a", 1}, {"aa", 1}})};
 
@@ -4923,6 +4936,21 @@ TEST(Dfa_test, Separator_failure_names_the_clause_a_byte_fails_and_the_words_tha
     EXPECT_EQ(
             tokens_of(reaching, "ab#ab#ab"),
             (Kept_t{{{1, 2}, {discarded_kind, 1}, {1, 2}, {discarded_kind, 1}, {1, 2}}}));
+
+    // The third clause names a shortest kept spelling beginning with the byte after the separator, whichever byte
+    // continues it: ab before acc over the kept ab and acc with # and #ax discarded, and ac before abbb over the kept
+    // abbb and ac with # and #ad discarded.
+    const Simulator shorter_first{
+            literal_tokens({{"ab", 1}, {"acc", 1}, {"#", discarded_kind}, {"#ax", discarded_kind}})};
+
+    expect(separator_failure(shorter_first, '#', discarded), Separator_clause::before_kept, "ab", "#ax",
+           "# over ab, acc, #, #ax");
+
+    const Simulator shorter_last{
+            literal_tokens({{"abbb", 1}, {"ac", 1}, {"#", discarded_kind}, {"#ad", discarded_kind}})};
+
+    expect(separator_failure(shorter_last, '#', discarded), Separator_clause::before_kept, "ac", "#ad",
+           "# over abbb, ac, #, #ad");
 
     // A spelling is a shortest one its clause forbids: over the kept a and b with #, a#bb and b#a discarded, the second
     // clause fails on both a#bb and b#a, and b#a is the shorter.

@@ -7046,6 +7046,25 @@ TEST_F(Lexer_test, A_window_longer_than_a_machine_word_is_decided_like_a_short_o
         ASSERT_TRUE(span.has_value());
         EXPECT_EQ(*span, width - 1);
     }
+
+    // Those windows anchor their last byte, a reach of zero. The sole token a^69 b certifies its window at its first
+    // byte, a reach of 69, and every input is a run of that token, so the anchor-free stretch is the token's interior.
+    Builder far_builder{};
+
+    const std::string far_word{std::string(69, 'a') + "b"};
+
+    far_builder.add_token(text(far_word), Token_kind::a, 1);
+
+    const auto far_lexer{far_builder.build()};
+
+    ASSERT_EQ(far_lexer.is_split_window(far_word), std::optional<std::size_t>{0});
+
+    const std::vector<dfa::Certified_pair> far_inventory{{.window = far_word, .origin = 0}};
+
+    const auto far_span{far_lexer.anchor_free_span(far_inventory)};
+
+    ASSERT_TRUE(far_span.has_value());
+    EXPECT_EQ(*far_span, 69U);
 }
 
 TEST_F(Lexer_test, A_run_token_leaves_the_window_span_unbounded_too)
@@ -7081,9 +7100,10 @@ TEST_F(Lexer_test, The_window_span_equals_the_longest_unanchored_run_over_every_
     // {a, b} of length one to four that is_split_window() certifies and against each of those pairs alone. The oracle
     // scans every input to length twelve by maximal munch over the literals themselves and takes the longest run of
     // positions no window occurrence anchors. A bounded span must equal it, and an unbounded one must be met by a run
-    // reaching within a byte of the bound. Most bounded inventories anchor fewer bytes back than their widest window's
-    // width less one, which is where the walk's reach, the most bytes any window runs past its origin, falls short of
-    // that width; the tallies hold the universe to them.
+    // reaching within a byte of the bound. A set certifying no window has the empty inventory alone, unbounded since
+    // its literals repeat. Most bounded inventories anchor fewer bytes back than their widest window's width less one,
+    // which is where the walk's reach, the most bytes any window runs past its origin, falls short of that width; the
+    // tallies hold the universe to them.
     constexpr std::size_t bound{12};
 
     const auto inputs{words("ab", bound)};
@@ -7114,11 +7134,6 @@ TEST_F(Lexer_test, The_window_span_equals_the_longest_unanchored_run_over_every_
             {
                 certified.push_back({.window = window, .origin = *origin});
             }
-        }
-
-        if (certified.empty())
-        {
-            continue;
         }
 
         std::vector<std::vector<dfa::Certified_pair>> inventories{certified};
@@ -7168,8 +7183,8 @@ TEST_F(Lexer_test, The_window_span_equals_the_longest_unanchored_run_over_every_
         }
     }
 
-    // 6139 inventories, 197 bounded, 161 of those capped below the longest width less one, the longest span four.
-    EXPECT_EQ(decided, 6139U);
+    // 6151 inventories, 197 bounded, 161 of those capped below the longest width less one, the longest span four.
+    EXPECT_EQ(decided, 6151U);
     EXPECT_EQ(bounded, 197U);
     EXPECT_EQ(short_of_width, 161U);
     EXPECT_EQ(longest, 4U);
