@@ -156,12 +156,16 @@ enum class Overlap_graph : std::size_t
  * short of its last byte, and the longer at its end, and the lists of the tokens spelled on each node's path hold at
  * most L S tokens together, L the longest token's length. Each usefulness and each adjacency takes at most as many
  * steps of the traces as its two tokens have bytes, less one, so the usefulnesses take O(T) steps together and the at
- * most V^2 adjacencies fewer than 2 V S. With each step's pair, each adjacency and the choices beside each position
- * kept in a hash map, the live graph is explored in O(S^2) space and expected time and the stopped graph in O(S^2 + V^2
- * S), the hash lookups taking constant time on average. S and V are at most twice the table's size T, the lengths of
- * its merges' parts summed. The whole call takes expected time quadratic in T, O(T + S^2), and space O(T + S^2); over
- * the stopped graph it takes expected time cubic in T, O(T + S^2 + V^2 S), and space the same, where the whole product
- * takes quartic time.
+ * most V^2 adjacencies fewer than 2 V S. With each step's pair interned in a hash table of node numbers at most half
+ * full, the choices beside each position kept in a hash map, each adjacency in a table of two bits for every pair of
+ * canonical tokens and each step stored as the node it reaches, in blocks of one fixed size that no node's steps
+ * straddle, the live graph is explored in O(S^2) space and expected time and the stopped graph in O(S^2 + V^2 S), the
+ * hash lookups taking constant time on average. A pair holds each copy's token number and the bytes it has read in 32
+ * bits, for a table of fewer than 2^32 tokens, the symbols and the merges together, each shorter than 2^32 bytes, and a
+ * node's number in 32 bits, the graph refused past 2^32 - 1 nodes. S and V are at most twice the table's size T, the
+ * lengths of its merges' parts summed. The whole call takes expected time quadratic in T, O(T + S^2), and space O(T +
+ * S^2); over the stopped graph it takes expected time cubic in T, O(T + S^2 + V^2 S), and space the same, where the
+ * whole product takes quartic time.
  *
  * The two parts of a useful merge differ, so its pass joins every occurrence of them, and it moves the first byte from
  * which the encodings of x and of ax agree by at most the length of its right part: the radius is at most the total
@@ -173,6 +177,7 @@ enum class Overlap_graph : std::size_t
  * @throws std::invalid_argument If a merge names a part that neither the alphabet nor an earlier merge carries, or a
  *         product that the alphabet or an earlier merge already carries; the message names the merge and its rank,
  *         each spelling quoted, a byte outside printable ASCII written `\xHH` and the quote and the backslash escaped.
+ * @throws std::runtime_error If the overlap graph explored would grow past 2^32 - 1 nodes.
  */
 [[nodiscard]] Ripple_radius ripple_radius(std::span<const Merge> merges);
 
@@ -186,6 +191,7 @@ enum class Overlap_graph : std::size_t
  * @param graph The part of the overlap graph explored.
  * @return As for ripple_radius(merges).
  * @throws std::invalid_argument As for ripple_radius(merges).
+ * @throws std::runtime_error As for ripple_radius(merges).
  */
 [[nodiscard]] Ripple_radius ripple_radius_with_graph(std::span<const Merge> merges, Overlap_graph graph);
 
@@ -220,6 +226,7 @@ enum class Overlap_graph : std::size_t
  *         alphabet nor an earlier merge carries, or a product that the alphabet or an earlier merge already carries;
  *         the message names the character, or the merge and its rank, each spelling quoted, a byte outside printable
  *         ASCII written `\xHH` and the quote and the backslash escaped.
+ * @throws std::runtime_error As for ripple_radius(merges).
  */
 [[nodiscard]] Ripple_radius ripple_radius(std::span<const Merge> merges, std::string_view alphabet);
 
@@ -235,6 +242,7 @@ enum class Overlap_graph : std::size_t
  * @param graph The part of the overlap graph explored.
  * @return As for ripple_radius(merges, alphabet).
  * @throws std::invalid_argument As for ripple_radius(merges, alphabet).
+ * @throws std::runtime_error As for ripple_radius(merges).
  */
 [[nodiscard]] Ripple_radius ripple_radius_with_graph(
         std::span<const Merge> merges, std::string_view alphabet, Overlap_graph graph);
@@ -259,6 +267,7 @@ enum class Overlap_graph : std::size_t
  * @param graph The part of the overlap graph explored.
  * @return The number of steps.
  * @throws std::invalid_argument As for ripple_radius(merges).
+ * @throws std::runtime_error As for ripple_radius(merges).
  */
 [[nodiscard]] std::size_t overlap_graph_steps(std::span<const Merge> merges, Overlap_graph graph);
 

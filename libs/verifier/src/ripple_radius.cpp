@@ -1,12 +1,15 @@
 #include "munch/verifier/ripple_radius.hpp"
 
 #include <algorithm>
+#include <bit>
 #include <boost/container_hash/hash.hpp>
 #include <cstddef>
+#include <cstdint>
 #include <format>
 #include <iterator>
 #include <limits>
 #include <map>
+#include <numeric>
 #include <optional>
 #include <span>
 #include <stdexcept>
@@ -33,6 +36,12 @@ using Token_t = std::size_t;
 using Ranks_t = std::unordered_map<std::pair<Token_t, Token_t>, std::size_t, boost::hash<std::pair<Token_t, Token_t>>>;
 
 /**
+ * @brief A node of the overlap graph, numbered in the order it is found, in 32 bits so that an edge to it takes four
+ *        bytes.
+ */
+using Node_t = std::uint32_t;
+
+/**
  * @brief The number of bytes, the symbols of the byte alphabet.
  */
 constexpr std::size_t byte_count{256};
@@ -41,6 +50,17 @@ constexpr std::size_t byte_count{256};
  * @brief The rank standing for no merge, past the rank of every merge.
  */
 constexpr std::size_t no_merge{std::numeric_limits<std::size_t>::max()};
+
+/**
+ * @brief The token number of a position at the start, no token guessed, past the number of every token a position
+ *        holds.
+ */
+constexpr std::uint32_t no_token{std::numeric_limits<std::uint32_t>::max()};
+
+/**
+ * @brief The node number of an empty slot of the interned pairs' table, past the number of every node.
+ */
+constexpr Node_t no_node{std::numeric_limits<Node_t>::max()};
 
 /**
  * @brief The merge table resolved to tokens over an alphabet: the token of each symbol, and each merge's parts by rank,
@@ -177,6 +197,17 @@ struct Vocabulary
     std::vector<Token_t> named{};
 
     /**
+     * @brief The place of each canonical token among the canonical tokens, the named symbols ascending and then the
+     *        useful products in rank order, by token, unused for a token that is not canonical.
+     */
+    std::vector<std::size_t> places{};
+
+    /**
+     * @brief The number of canonical tokens.
+     */
+    std::size_t count{};
+
+    /**
      * @brief The trie of the canonical tokens' spellings.
      */
     Trie trie{};
@@ -184,7 +215,7 @@ struct Vocabulary
 
 /**
  * @brief Where one copy of the spelling automaton is: the token it has guessed and how many of its bytes it has read,
- *        or the start, no token guessed.
+ *        or the start, no token guessed, each in 32 bits so that a pair takes sixteen bytes.
  */
 struct Position
 {
@@ -194,19 +225,19 @@ struct Position
     bool operator==(const Position&) const = default;
 
     /**
-     * @brief The guessed token, none at the start.
+     * @brief The guessed token's number, no_token at the start.
      */
-    std::optional<Token_t> token{};
+    std::uint32_t token{no_token};
 
     /**
-     * @brief The bytes of the token read, from one to its length.
+     * @brief The bytes of the token read, from one to its length, zero at the start.
      */
-    std::size_t read{};
+    std::uint32_t read{};
 };
 
 /**
  * @brief A node of the overlap graph: the copy reading the input alone and the copy that read the prepended symbol
- *        first.
+ *        first, in sixteen bytes.
  */
 struct Pair
 {
@@ -247,7 +278,7 @@ struct Position_hash
 };
 
 /**
- * @brief Hashes a pair for the map of interned ones.
+ * @brief Hashes a pair for the table of interned ones.
  */
 struct Pair_hash
 {
@@ -269,73 +300,42 @@ struct Pair_hash
 };
 
 /**
- * @brief One copy's reading of a byte: where the copy is after it, and the byte's offset in its guessed token with that
- *        token's length.
+ * @brief The edges of a graph, each node's together in the order found: where each node's edges begin, and the node at
+ *        the far end of each edge.
  */
-struct Reading
+struct Edges
 {
     /**
-     * @brief The position after the byte.
+     * @brief The index of each node's first edge among the ends, by node, and the number of edges last.
      */
-    Position next{};
+    std::vector<std::size_t> firsts{};
 
     /**
-     * @brief The byte's offset in its token.
+     * @brief The node at the far end of each edge.
      */
-    std::size_t offset{};
-
-    /**
-     * @brief The token's length.
-     */
-    std::size_t length{};
+    std::vector<Node_t> ends{};
 };
 
 /**
- * @brief A step of the overlap graph: the node it reaches, the byte read, the byte's offset in the base copy's token,
- *        and whether the two copies' tokens covering the byte differ.
+ * @brief A step of the overlap graph, named by the node it leaves and the node it reaches, whose pair gives the byte
+ *        read, the byte's offset in the base copy's token and whether the two copies' tokens covering it differ.
  */
 struct Step
 {
     /**
-     * @brief The node reached.
-     */
-    std::size_t target{};
-
-    /**
-     * @brief The byte read.
-     */
-    unsigned char byte{};
-
-    /**
-     * @brief The byte's offset in the base copy's token.
-     */
-    std::size_t offset{};
-
-    /**
-     * @brief Whether the two copies' tokens covering the byte differ in offset or length.
-     */
-    bool marked{};
-};
-
-/**
- * @brief A step named by the node it leaves and its index among that node's steps.
- */
-struct Arrival
-{
-    /**
      * @brief The node the step leaves.
      */
-    std::size_t node{};
+    Node_t source{};
 
     /**
-     * @brief The step's index among the node's steps.
+     * @brief The node the step reaches.
      */
-    std::size_t step{};
+    Node_t target{};
 };
 
 /**
- * @brief The longest paths inside the marked part of the graph: each node's longest distance from a source and the step
- *        that attains it.
+ * @brief The longest paths inside the marked part of the graph: each node's longest distance from a source and the node
+ *        before it on a path that attains it.
  */
 struct Longest
 {
@@ -345,9 +345,9 @@ struct Longest
     std::vector<std::size_t> depths{};
 
     /**
-     * @brief The step into each node on its longest path, none at a source or outside the marked part.
+     * @brief The node before each node on its longest path, none at a source or outside the marked part.
      */
-    std::vector<std::optional<Arrival>> arrivals{};
+    std::vector<std::optional<Node_t>> arrivals{};
 };
 
 /**
@@ -363,7 +363,7 @@ struct Best
     /**
      * @brief The marked step attaining it.
      */
-    std::optional<Arrival> step{};
+    std::optional<Step> step{};
 };
 
 /**
@@ -826,12 +826,22 @@ void list_prefixes(Trie& trie)
         }
     }
 
+    const auto token_count{spellings.size()};
+
     Vocabulary vocabulary{
             .spellings = std::move(spellings),
             .ranks = std::move(ranks),
             .traces = std::move(traces),
             .named = {},
+            .places = std::vector<std::size_t>(token_count, 0),
+            .count = 0,
             .trie = Trie(1)};
+
+    const auto add_canonical{[&vocabulary](const Token_t token) {
+        vocabulary.places[token] = vocabulary.count;
+        ++vocabulary.count;
+        add_token(vocabulary.trie, vocabulary.spellings[token], token);
+    }};
 
     for (Token_t symbol{0}; symbol < named.size(); ++symbol)
     {
@@ -841,14 +851,14 @@ void list_prefixes(Trie& trie)
         }
 
         vocabulary.named.push_back(symbol);
-        add_token(vocabulary.trie, vocabulary.spellings[symbol], symbol);
+        add_canonical(symbol);
     }
 
     for (const auto rank : useful)
     {
         const auto product{product_of(table, rank)};
 
-        add_token(vocabulary.trie, vocabulary.spellings[product], product);
+        add_canonical(product);
     }
 
     list_prefixes(vocabulary.trie);
@@ -936,13 +946,39 @@ void list_prefixes(Trie& trie)
 }
 
 /**
+ * @brief Returns the position of a copy that has guessed a token and read its first bytes, each held in 32 bits.
+ * @param token The token, numbered below no_token.
+ * @param read The bytes of the token read, fewer than 2^32.
+ * @return The position.
+ */
+[[nodiscard]] Position position_of(const Token_t token, const std::size_t read) noexcept
+{
+    return {.token = static_cast<std::uint32_t>(token), .read = static_cast<std::uint32_t>(read)};
+}
+
+/**
+ * @brief Returns the edges of a node, the nodes at their far ends in the order found.
+ * @param edges The edges of the graph.
+ * @param node The node.
+ * @return The far ends of its edges.
+ */
+[[nodiscard]] std::span<const Node_t> edges_of(const Edges& edges, const std::size_t node)
+{
+    const auto first{edges.firsts[node]};
+    const auto last{edges.firsts[node + 1]};
+
+    const std::span ends{edges.ends};
+
+    return ends.subspan(first, last - first);
+}
+
+/**
  * @brief Returns the nodes from which a path leads to the given ones, the given ones included.
- * @param predecessors The predecessors, by node.
+ * @param predecessors The predecessors, the edges of each node to the nodes with a step into it.
  * @param reached Whether each node is given, by node.
  * @return Whether each node leads to a given one, by node.
  */
-[[nodiscard]] std::vector<bool> leading_to(
-        const std::vector<std::vector<std::size_t>>& predecessors, std::vector<bool> reached)
+[[nodiscard]] std::vector<bool> leading_to(const Edges& predecessors, std::vector<bool> reached)
 {
     std::vector<std::size_t> frontier{};
 
@@ -960,7 +996,7 @@ void list_prefixes(Trie& trie)
 
         frontier.pop_back();
 
-        for (const auto predecessor : predecessors[node])
+        for (const auto predecessor : edges_of(predecessors, node))
         {
             if (reached[predecessor])
             {
@@ -976,9 +1012,126 @@ void list_prefixes(Trie& trie)
 }
 
 /**
+ * @brief The steps of the overlap graph, each node's together in the order found, held in blocks of one fixed number of
+ *        places, a power of two above the most steps a node has, so that a node's steps lie in one block and no step
+ *        moves as the steps grow: a step's place is its block's number times the block's places plus its index there.
+ */
+class Steps
+{
+public:
+    /**
+     * @brief Takes the most steps a node has, no step placed yet.
+     * @param most The most steps a node has.
+     */
+    explicit Steps(std::size_t most);
+
+    /**
+     * @brief Places the first step of the next node: in the last block when it keeps a free place after the node's
+     *        steps, otherwise at the start of a new block, so that every first step placed lies in a block. Placed once
+     *        more after the last node, with no steps, it ends the last node's steps.
+     * @param count The number of the node's steps, at most the most a node has.
+     */
+    void begin_node(std::size_t count);
+
+    /**
+     * @brief Adds a step of the node begun last.
+     * @param target The node the step reaches.
+     */
+    void push_back(Node_t target);
+
+    /**
+     * @brief Returns the number of steps.
+     * @return The number of steps.
+     */
+    [[nodiscard]] std::size_t size() const;
+
+    /**
+     * @brief Returns the steps of a node, the nodes they reach in the order found: from the place of its first step to
+     *        that of the next node's when it lies in the same block, and otherwise to the end of the block.
+     * @param node The node, followed by a node or the end.
+     * @return The nodes its steps reach.
+     */
+    [[nodiscard]] std::span<const Node_t> edges_of(std::size_t node) const;
+
+private:
+    /**
+     * @brief The base-two logarithm of the places of a block.
+     */
+    std::size_t block_bits_{};
+
+    /**
+     * @brief The place of each node's first step, by node, and the place ending the last node's steps last.
+     */
+    std::vector<std::size_t> firsts_{};
+
+    /**
+     * @brief The blocks, each with room reserved for all its places, so that adding a step moves none.
+     */
+    std::vector<std::vector<Node_t>> blocks_{};
+
+    /**
+     * @brief The number of steps.
+     */
+    std::size_t size_{};
+};
+
+Steps::Steps(const std::size_t most) : block_bits_{static_cast<std::size_t>(std::bit_width(most))}
+{}
+
+void Steps::begin_node(const std::size_t count)
+{
+    const auto places{std::size_t{1} << block_bits_};
+
+    const auto fits{!blocks_.empty() && blocks_.back().size() + count < places};
+
+    if (!fits)
+    {
+        blocks_.emplace_back();
+        blocks_.back().reserve(places);
+    }
+
+    const auto block{blocks_.size() - 1};
+
+    const auto place{(block << block_bits_) + blocks_.back().size()};
+
+    firsts_.push_back(place);
+}
+
+void Steps::push_back(const Node_t target)
+{
+    blocks_.back().push_back(target);
+    ++size_;
+}
+
+std::size_t Steps::size() const
+{
+    return size_;
+}
+
+std::span<const Node_t> Steps::edges_of(const std::size_t node) const
+{
+    const auto mask{(std::size_t{1} << block_bits_) - 1};
+
+    const auto first{firsts_[node]};
+    const auto next{firsts_[node + 1]};
+
+    const auto block{first >> block_bits_};
+
+    const std::span steps{blocks_[block]};
+
+    const auto same_block{(next >> block_bits_) == block};
+
+    const auto last{same_block ? next & mask : steps.size()};
+
+    const auto offset{first & mask};
+
+    return steps.subspan(offset, last - offset);
+}
+
+/**
  * @brief The overlap graph under exploration, up to the token boundaries the two copies share: the vocabulary of the
  *        merge table, the part of the graph explored, the pair each node reads as, the interned pairs with their nodes,
- *        each node's steps, the nodes ending both copies, and the adjacencies and the comparable tokens decided so far.
+ *        the steps, the nodes ending both copies, and the adjacencies and the comparable tokens decided so far.
  */
 class Exploration
 {
@@ -998,7 +1151,9 @@ public:
 
     /**
      * @brief Returns the radius and the mirrored constant read off the explored graph, each with a prepended input
-     *        attaining it.
+     *        attaining it, first dropping what only the exploration reads, the table of interned pairs, the adjacencies
+     *        and the comparable tokens, and the predecessors once the live nodes and the marked part are found, while
+     *        the pair each node reads as stays for the witnesses.
      * @return The finite ripple.
      */
     [[nodiscard]] Finite_ripple run() &&;
@@ -1014,8 +1169,24 @@ private:
      * @brief Returns the node of a pair, interning it as a new node when it is first found.
      * @param pair The pair.
      * @return The pair's node.
+     * @throws std::runtime_error If the pair is new and would grow the graph past 2^32 - 1 nodes.
      */
-    [[nodiscard]] std::size_t intern(const Pair& pair);
+    [[nodiscard]] Node_t intern(const Pair& pair);
+
+    /**
+     * @brief Grows the table of interned pairs to the least power of two of slots at least twice the nodes with one
+     *        more, placing every node again by its pair, so that at most half the slots hold a node once a pair is
+     *        added.
+     */
+    void grow_interned();
+
+    /**
+     * @brief Returns the slot of a pair in the table of interned pairs, probing linearly from the slot of its hash: the
+     *        slot holding its node, or the first empty slot when it has none.
+     * @param pair The pair.
+     * @return The slot.
+     */
+    [[nodiscard]] std::size_t slot_of(const Pair& pair) const;
 
     /**
      * @brief Returns whether a copy is at a token end: at the start, or with every byte of its token read.
@@ -1026,7 +1197,8 @@ private:
 
     /**
      * @brief Reads the one byte a node can read, the next byte of a copy inside its token, both copies reading it,
-     *        interning the pairs reached; the node is not one ending both copies, so one copy is inside its token.
+     *        interning the pairs reached and adding a step to each; the node is not one ending both copies, so one copy
+     *        is inside its token.
      * @param node The node read from, one copy inside its token.
      */
     void expand(std::size_t node);
@@ -1042,19 +1214,19 @@ private:
     [[nodiscard]] std::span<const Token_t> choices(const Position& inside);
 
     /**
-     * @brief Returns one copy's readings of a byte: inside its token the token's next byte, and at a token end the
-     *        first byte of every choice that may follow the token just ended.
+     * @brief Returns one copy's readings of a byte, the positions after it: inside its token the token's next byte, and
+     *        at a token end the first byte of every choice that may follow the token just ended.
      * @param position The copy's position.
      * @param byte The byte read.
      * @param choices The tokens a copy at a token end may begin, ascending, each beginning with the byte.
-     * @return The readings, none when the copy cannot read the byte.
+     * @return The positions after the byte, none when the copy cannot read it.
      */
-    [[nodiscard]] std::vector<Reading> readings(
+    [[nodiscard]] std::vector<Position> readings(
             const Position& position, unsigned char byte, std::span<const Token_t> choices);
 
     /**
-     * @brief Returns whether the encoding of two tokens' spellings together is the two tokens, read off their traces
-     *        once per pair.
+     * @brief Returns whether the encoding of two canonical tokens' spellings together is the two tokens, read off their
+     *        traces once per pair.
      * @param first The first token.
      * @param second The second token.
      * @return True when the second token may follow the first in an encoding.
@@ -1062,10 +1234,10 @@ private:
     [[nodiscard]] bool is_adjacent(Token_t first, Token_t second);
 
     /**
-     * @brief Returns every node's predecessors, the nodes with a step into it.
-     * @return The predecessors, by node.
+     * @brief Returns every node's predecessors, the nodes with a step into it, as the edges of each node to them.
+     * @return The predecessors.
      */
-    [[nodiscard]] std::vector<std::vector<std::size_t>> predecessors_of() const;
+    [[nodiscard]] Edges predecessors_of() const;
 
     /**
      * @brief Returns the nodes with a marked step into a live node.
@@ -1075,10 +1247,18 @@ private:
     [[nodiscard]] std::vector<bool> marking(const std::vector<bool>& live) const;
 
     /**
+     * @brief Returns whether the step into a node is marked, the two copies' tokens covering the byte read differing in
+     *        offset or length, every step into a node reading the byte both copies have read last.
+     * @param node The node, not a source.
+     * @return True when the step is marked.
+     */
+    [[nodiscard]] bool is_marked(std::size_t node) const;
+
+    /**
      * @brief Returns the longest paths from the sources inside the marked part, the nodes leading to a marked step into
      *        a live node, which is acyclic without an effective self-pair, taken in topological order.
      * @param marked_part Whether each node is in the marked part, by node.
-     * @return Each node's longest distance and the step attaining it.
+     * @return Each node's longest distance and the node before it on a path attaining it.
      */
     [[nodiscard]] Longest longest_paths(const std::vector<bool>& marked_part) const;
 
@@ -1103,11 +1283,18 @@ private:
     [[nodiscard]] std::optional<Prepended_input> witness(const Longest& longest, const Best& best) const;
 
     /**
+     * @brief Returns the byte the step into a node reads, the last byte its base copy has read.
+     * @param node The node, not a source.
+     * @return The byte.
+     */
+    [[nodiscard]] unsigned char byte_into(std::size_t node) const;
+
+    /**
      * @brief Returns the bytes of a shortest path from a node to a node ending both copies.
      * @param from The node, live.
      * @return The bytes read on the path.
      */
-    [[nodiscard]] std::string completion(std::size_t from) const;
+    [[nodiscard]] std::string completion(Node_t from) const;
 
     /**
      * @brief The canonical tokens of the table.
@@ -1130,19 +1317,28 @@ private:
     std::vector<bool> accepting_{};
 
     /**
-     * @brief The interned pairs with their nodes.
+     * @brief The interned pairs, a table of node numbers placed by the hash of each node's pair: a power of two of
+     *        slots, at most half of them holding a node and every other no_node, a pair found by probing linearly from
+     *        the slot of its hash to its node or to the first empty slot.
      */
-    std::unordered_map<Pair, std::size_t, Pair_hash> interned_{};
+    std::vector<Node_t> interned_{};
 
     /**
-     * @brief The steps found so far, by node.
+     * @brief The steps found so far, each node's to the nodes they reach, in blocks of more places than a node has
+     *        steps.
      */
-    std::vector<std::vector<Step>> steps_{};
+    Steps steps_;
 
     /**
-     * @brief Whether the encoding of each pair of tokens asked so far is the two tokens.
+     * @brief Whether the encoding of each pair of canonical tokens has been read off their traces, by the first token's
+     *        place times the number of canonical tokens plus the second's.
      */
-    std::unordered_map<std::pair<Token_t, Token_t>, bool, boost::hash<std::pair<Token_t, Token_t>>> adjacencies_{};
+    std::vector<bool> asked_{};
+
+    /**
+     * @brief Whether the encoding of each pair of canonical tokens asked so far is the two tokens, placed as asked_ is.
+     */
+    std::vector<bool> adjacent_{};
 
     /**
      * @brief The live graph's choices beside each position inside a token asked so far.
@@ -1151,7 +1347,11 @@ private:
 };
 
 Exploration::Exploration(Vocabulary vocabulary, const Overlap_graph graph)
-    : vocabulary_{std::move(vocabulary)}, graph_{graph}
+    : vocabulary_{std::move(vocabulary)}
+    , graph_{graph}
+    , steps_{vocabulary_.count}
+    , asked_(vocabulary_.count * vocabulary_.count, false)
+    , adjacent_(vocabulary_.count * vocabulary_.count, false)
 {}
 
 void Exploration::explore()
@@ -1162,7 +1362,9 @@ void Exploration::explore()
 
         for (const auto token : beginning_with(vocabulary_.trie, spelling))
         {
-            std::ignore = intern({.base = {}, .prepended = {.token = token, .read = spelling.size()}});
+            const auto prepended{position_of(token, spelling.size())};
+
+            std::ignore = intern({.base = {}, .prepended = prepended});
         }
     }
 
@@ -1171,36 +1373,82 @@ void Exploration::explore()
         // A node ending both copies is a common token boundary, past which the two encodings agree, so it is a leaf.
         if (accepting_[node])
         {
+            steps_.begin_node(0);
+
             continue;
         }
 
         expand(node);
     }
+
+    steps_.begin_node(0);
 }
 
-std::size_t Exploration::intern(const Pair& pair)
+Node_t Exploration::intern(const Pair& pair)
 {
-    const auto [entry, inserted]{interned_.try_emplace(pair, pairs_.size())};
-
-    const auto& [key, node]{*entry};
-
-    if (!inserted)
+    if (2 * (pairs_.size() + 1) > interned_.size())
     {
-        return node;
+        grow_interned();
     }
+
+    const auto slot{slot_of(pair)};
+
+    const auto found{interned_[slot]};
+
+    if (found != no_node)
+    {
+        return found;
+    }
+
+    if (pairs_.size() >= std::numeric_limits<Node_t>::max())
+    {
+        throw std::runtime_error{"ripple_radius: the overlap graph would grow past 2^32 - 1 nodes"};
+    }
+
+    const auto node{static_cast<Node_t>(pairs_.size())};
 
     const auto accepting{is_at_end(pair.base) && is_at_end(pair.prepended)};
 
+    interned_[slot] = node;
     pairs_.push_back(pair);
-    steps_.emplace_back();
     accepting_.push_back(accepting);
 
     return node;
 }
 
+void Exploration::grow_interned()
+{
+    const auto slot_count{std::bit_ceil(2 * (pairs_.size() + 1))};
+
+    interned_.assign(slot_count, no_node);
+
+    for (Node_t node{0}; node < pairs_.size(); ++node)
+    {
+        const auto slot{slot_of(pairs_[node])};
+
+        interned_[slot] = node;
+    }
+}
+
+std::size_t Exploration::slot_of(const Pair& pair) const
+{
+    const auto mask{interned_.size() - 1};
+
+    const auto hash{Pair_hash{}(pair)};
+
+    auto slot{hash & mask};
+
+    while (interned_[slot] != no_node && pairs_[interned_[slot]] != pair)
+    {
+        slot = (slot + 1) & mask;
+    }
+
+    return slot;
+}
+
 bool Exploration::is_at_end(const Position& position) const
 {
-    return !position.token || position.read == vocabulary_.spellings[*position.token].size();
+    return position.token == no_token || position.read == vocabulary_.spellings[position.token].size();
 }
 
 void Exploration::expand(const std::size_t node)
@@ -1213,22 +1461,24 @@ void Exploration::expand(const std::size_t node)
 
     const auto& [token, read]{inside};
 
-    const auto byte{static_cast<unsigned char>(vocabulary_.spellings[*token][read])};
+    const auto byte{static_cast<unsigned char>(vocabulary_.spellings[token][read])};
 
     const auto choices_beside{choices(inside)};
 
     const auto base_readings{readings(base, byte, choices_beside)};
     const auto prepended_readings{readings(prepended, byte, choices_beside)};
 
-    for (const auto& [base_next, base_offset, base_length] : base_readings)
+    const auto count{base_readings.size() * prepended_readings.size()};
+
+    steps_.begin_node(count);
+
+    for (const auto& base_next : base_readings)
     {
-        for (const auto& [prepended_next, prepended_offset, prepended_length] : prepended_readings)
+        for (const auto& prepended_next : prepended_readings)
         {
             const auto target{intern({.base = base_next, .prepended = prepended_next})};
 
-            const auto marked{base_offset != prepended_offset || base_length != prepended_length};
-
-            steps_[node].push_back({.target = target, .byte = byte, .offset = base_offset, .marked = marked});
+            steps_.push_back(target);
         }
     }
 }
@@ -1237,7 +1487,7 @@ std::span<const Token_t> Exploration::choices(const Position& inside)
 {
     const auto& [token, read]{inside};
 
-    const std::string_view spelling{vocabulary_.spellings[*token]};
+    const std::string_view spelling{vocabulary_.spellings[token]};
 
     const auto unread{spelling.substr(read)};
 
@@ -1258,35 +1508,33 @@ std::span<const Token_t> Exploration::choices(const Position& inside)
     return tokens;
 }
 
-std::vector<Reading> Exploration::readings(
+std::vector<Position> Exploration::readings(
         const Position& position, const unsigned char byte, const std::span<const Token_t> choices)
 {
     const auto& [token, read]{position};
 
     if (!is_at_end(position))
     {
-        const auto& spelling{vocabulary_.spellings[*token]};
+        const auto& spelling{vocabulary_.spellings[token]};
 
         if (static_cast<unsigned char>(spelling[read]) != byte)
         {
             return {};
         }
 
-        return {{.next = {.token = token, .read = read + 1}, .offset = read, .length = spelling.size()}};
+        return {{.token = token, .read = read + 1}};
     }
 
-    std::vector<Reading> found{};
+    std::vector<Position> found{};
 
     for (const auto next : choices)
     {
-        if (token && !is_adjacent(*token, next))
+        if (token != no_token && !is_adjacent(token, next))
         {
             continue;
         }
 
-        const auto length{vocabulary_.spellings[next].size()};
-
-        found.push_back({.next = {.token = next, .read = 1}, .offset = 0, .length = length});
+        found.push_back(position_of(next, 1));
     }
 
     return found;
@@ -1294,35 +1542,46 @@ std::vector<Reading> Exploration::readings(
 
 bool Exploration::is_adjacent(const Token_t first, const Token_t second)
 {
-    const auto known{adjacencies_.find({first, second})};
+    const auto& places{vocabulary_.places};
 
-    if (known != adjacencies_.cend())
+    const auto place{places[first] * vocabulary_.count + places[second]};
+
+    if (asked_[place])
     {
-        const auto& [tokens, adjacent]{*known};
-
-        return adjacent;
+        return adjacent_[place];
     }
 
     const auto& traces{vocabulary_.traces};
 
-    const auto places{joined(traces[first], traces[second], vocabulary_.ranks)};
+    const auto joined_places{joined(traces[first], traces[second], vocabulary_.ranks)};
 
-    const auto adjacent{places.has_value()};
+    const auto adjacent{joined_places.has_value()};
 
-    adjacencies_.emplace(std::pair{first, second}, adjacent);
+    asked_[place] = true;
+    adjacent_[place] = adjacent;
 
     return adjacent;
 }
 
 Finite_ripple Exploration::run() &&
 {
-    const auto predecessors{predecessors_of()};
+    interned_ = decltype(interned_){};
+    asked_ = decltype(asked_){};
+    adjacent_ = decltype(adjacent_){};
+    comparable_ = decltype(comparable_){};
 
-    const auto live{leading_to(predecessors, accepting_)};
+    // The predecessors, read only to find the live nodes and the marked part, are freed before the longest paths.
+    const auto [live, marked_part]{[this] {
+        const auto predecessors{predecessors_of()};
 
-    const auto marked{marking(live)};
+        auto live_nodes{leading_to(predecessors, accepting_)};
 
-    const auto marked_part{leading_to(predecessors, marked)};
+        const auto marked{marking(live_nodes)};
+
+        auto marked_nodes{leading_to(predecessors, marked)};
+
+        return std::pair{std::move(live_nodes), std::move(marked_nodes)};
+    }()};
 
     const auto longest{longest_paths(marked_part)};
 
@@ -1338,44 +1597,73 @@ Finite_ripple Exploration::run() &&
             .mirrored_witness = std::move(mirrored_witness)};
 }
 
-std::vector<std::vector<std::size_t>> Exploration::predecessors_of() const
+Edges Exploration::predecessors_of() const
 {
-    std::vector<std::vector<std::size_t>> predecessors(steps_.size());
+    const auto node_count{pairs_.size()};
 
-    for (std::size_t node{0}; node < steps_.size(); ++node)
+    std::vector<std::size_t> firsts(node_count + 1, 0);
+
+    for (std::size_t node{0}; node < node_count; ++node)
     {
-        for (const auto& [target, byte, offset, marked] : steps_[node])
+        for (const auto target : steps_.edges_of(node))
         {
-            predecessors[target].push_back(node);
+            ++firsts[target + 1];
         }
     }
 
-    return predecessors;
+    std::partial_sum(firsts.cbegin(), firsts.cend(), firsts.begin());
+
+    auto filled{firsts};
+
+    std::vector<Node_t> ends(steps_.size());
+
+    for (Node_t node{0}; node < node_count; ++node)
+    {
+        for (const auto target : steps_.edges_of(node))
+        {
+            ends[filled[target]] = node;
+            ++filled[target];
+        }
+    }
+
+    return {.firsts = std::move(firsts), .ends = std::move(ends)};
 }
 
 std::vector<bool> Exploration::marking(const std::vector<bool>& live) const
 {
-    std::vector<bool> marks(steps_.size(), false);
+    const auto node_count{pairs_.size()};
 
-    const auto into_live{[&live](const Step& step) { return step.marked && live[step.target]; }};
+    std::vector<bool> marks(node_count, false);
 
-    for (std::size_t node{0}; node < steps_.size(); ++node)
+    const auto into_live{[this, &live](const std::size_t target) { return is_marked(target) && live[target]; }};
+
+    for (std::size_t node{0}; node < node_count; ++node)
     {
-        marks[node] = std::ranges::any_of(steps_[node], into_live);
+        marks[node] = std::ranges::any_of(steps_.edges_of(node), into_live);
     }
 
     return marks;
 }
 
+bool Exploration::is_marked(const std::size_t node) const
+{
+    const auto& [base, prepended]{pairs_[node]};
+
+    const auto base_length{vocabulary_.spellings[base.token].size()};
+    const auto prepended_length{vocabulary_.spellings[prepended.token].size()};
+
+    return base.read != prepended.read || base_length != prepended_length;
+}
+
 Longest Exploration::longest_paths(const std::vector<bool>& marked_part) const
 {
-    const auto node_count{steps_.size()};
+    const auto node_count{pairs_.size()};
 
     std::vector<std::size_t> incoming(node_count, 0);
 
     for (std::size_t node{0}; node < node_count; ++node)
     {
-        for (const auto& [target, byte, offset, marked] : steps_[node])
+        for (const auto target : steps_.edges_of(node))
         {
             if (!marked_part[node] || !marked_part[target])
             {
@@ -1387,11 +1675,11 @@ Longest Exploration::longest_paths(const std::vector<bool>& marked_part) const
     }
 
     // The sources, the nodes whose base copy is at the start, have no step into them.
-    std::vector<std::size_t> ready{};
+    std::vector<Node_t> ready{};
 
-    for (std::size_t node{0}; node < node_count; ++node)
+    for (Node_t node{0}; node < node_count; ++node)
     {
-        if (marked_part[node] && !pairs_[node].base.token)
+        if (marked_part[node] && pairs_[node].base.token == no_token)
         {
             ready.push_back(node);
         }
@@ -1399,18 +1687,14 @@ Longest Exploration::longest_paths(const std::vector<bool>& marked_part) const
 
     Longest longest{
             .depths = std::vector<std::size_t>(node_count, 0),
-            .arrivals = std::vector<std::optional<Arrival>>(node_count)};
+            .arrivals = std::vector<std::optional<Node_t>>(node_count)};
 
     for (std::size_t head{0}; head < ready.size(); ++head)
     {
         const auto node{ready[head]};
 
-        const auto& steps{steps_[node]};
-
-        for (std::size_t index{0}; index < steps.size(); ++index)
+        for (const auto target : steps_.edges_of(node))
         {
-            const auto target{steps[index].target};
-
             if (!marked_part[target])
             {
                 continue;
@@ -1419,7 +1703,7 @@ Longest Exploration::longest_paths(const std::vector<bool>& marked_part) const
             if (longest.depths[node] + 1 > longest.depths[target])
             {
                 longest.depths[target] = longest.depths[node] + 1;
-                longest.arrivals[target] = Arrival{.node = node, .step = index};
+                longest.arrivals[target] = node;
             }
 
             --incoming[target];
@@ -1440,34 +1724,33 @@ std::pair<Best, Best> Exploration::best_steps(
     Best radius{};
     Best mirrored{};
 
-    for (std::size_t node{0}; node < steps_.size(); ++node)
+    for (Node_t node{0}; node < pairs_.size(); ++node)
     {
         if (!marked_part[node])
         {
             continue;
         }
 
-        const auto& steps{steps_[node]};
-
-        for (std::size_t index{0}; index < steps.size(); ++index)
+        for (const auto target : steps_.edges_of(node))
         {
-            const auto& [target, byte, offset, marked]{steps[index]};
-
-            if (!marked || !live[target])
+            if (!is_marked(target) || !live[target])
             {
                 continue;
             }
 
             const auto reach{longest.depths[node] + 1};
 
+            // The byte's offset in the base copy's token, which the base copy has read up to it.
+            const auto offset{pairs_[target].base.read - 1};
+
             if (reach > radius.value)
             {
-                radius = {.value = reach, .step = Arrival{.node = node, .step = index}};
+                radius = {.value = reach, .step = Step{.source = node, .target = target}};
             }
 
             if (reach - offset > mirrored.value)
             {
-                mirrored = {.value = reach - offset, .step = Arrival{.node = node, .step = index}};
+                mirrored = {.value = reach - offset, .step = Step{.source = node, .target = target}};
             }
         }
     }
@@ -1482,20 +1765,16 @@ std::optional<Prepended_input> Exploration::witness(const Longest& longest, cons
         return std::nullopt;
     }
 
-    const auto [node, index]{*best.step};
+    const auto [node, target]{*best.step};
 
-    const auto& [target, byte, offset, marked]{steps_[node][index]};
-
-    std::string bytes{static_cast<char>(byte)};
+    std::string bytes{static_cast<char>(byte_into(target))};
 
     auto source{node};
 
     for (auto arrival{longest.arrivals[source]}; arrival; arrival = longest.arrivals[source])
     {
-        const auto [previous, previous_step]{*arrival};
-
-        bytes += static_cast<char>(steps_[previous][previous_step].byte);
-        source = previous;
+        bytes += static_cast<char>(byte_into(source));
+        source = *arrival;
     }
 
     std::ranges::reverse(bytes);
@@ -1504,18 +1783,27 @@ std::optional<Prepended_input> Exploration::witness(const Longest& longest, cons
 
     const auto& [base, prepended]{pairs_[source]};
 
-    const auto& first_token{vocabulary_.spellings[*prepended.token]};
+    const auto& first_token{vocabulary_.spellings[prepended.token]};
 
     auto symbol{first_token.substr(0, prepended.read)};
 
     return Prepended_input{.symbol = std::move(symbol), .input = std::move(bytes)};
 }
 
-std::string Exploration::completion(const std::size_t from) const
+unsigned char Exploration::byte_into(const std::size_t node) const
 {
-    std::vector<std::optional<Arrival>> arrivals(steps_.size());
-    std::vector<bool> seen(steps_.size(), false);
-    std::vector<std::size_t> frontier{from};
+    const auto& [token, read]{pairs_[node].base};
+
+    const auto& spelling{vocabulary_.spellings[token]};
+
+    return static_cast<unsigned char>(spelling[read - 1]);
+}
+
+std::string Exploration::completion(const Node_t from) const
+{
+    std::vector<std::optional<Node_t>> arrivals(pairs_.size());
+    std::vector<bool> seen(pairs_.size(), false);
+    std::vector<Node_t> frontier{from};
 
     seen[from] = true;
 
@@ -1525,11 +1813,12 @@ std::string Exploration::completion(const std::size_t from) const
     {
         const auto node{frontier[head]};
 
-        const auto& steps{steps_[node]};
-
-        for (std::size_t index{0}; index < steps.size() && !accepting_[end]; ++index)
+        for (const auto target : steps_.edges_of(node))
         {
-            const auto target{steps[index].target};
+            if (accepting_[end])
+            {
+                break;
+            }
 
             if (seen[target])
             {
@@ -1537,7 +1826,7 @@ std::string Exploration::completion(const std::size_t from) const
             }
 
             seen[target] = true;
-            arrivals[target] = Arrival{.node = node, .step = index};
+            arrivals[target] = node;
             frontier.push_back(target);
             end = target;
         }
@@ -1545,12 +1834,9 @@ std::string Exploration::completion(const std::size_t from) const
 
     std::string bytes{};
 
-    for (auto node{end}; node != from;)
+    for (auto node{end}; node != from; node = *arrivals[node])
     {
-        const auto [previous, index]{*arrivals[node]};
-
-        bytes += static_cast<char>(steps_[previous][index].byte);
-        node = previous;
+        bytes += static_cast<char>(byte_into(node));
     }
 
     std::ranges::reverse(bytes);
@@ -1560,14 +1846,7 @@ std::string Exploration::completion(const std::size_t from) const
 
 std::size_t Exploration::steps() const
 {
-    std::size_t count{0};
-
-    for (const auto& out : steps_)
-    {
-        count += out.size();
-    }
-
-    return count;
+    return steps_.size();
 }
 
 /**
