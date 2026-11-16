@@ -1,6 +1,6 @@
 # Certified Split Windows for Parallel Lexing: Recovering Boundaries Where No Byte Certifies
 
-**Nicklas Nidhögg**, August 10, 2026. Mirrors `paper/split-windows/split-windows.tex`, the source posted as v3 of
+**Nicklas Nidhögg**, August 10, 2026. Mirrors `paper/split-windows/split-windows.tex`, the source posted as v4 of
 [arXiv:2608.09761](https://arxiv.org/abs/2608.09761). The paper evaluates munch at the v1.3.3 release, where the window
 machinery is a probe: the paper's principle is that the certificate's formulation should freeze there before becoming a
 public contract. The supported API arrived in release 1.4.0, two days before the paper's submission:
@@ -29,23 +29,23 @@ repository; this document states the idea precisely, relates it to prior work, a
 
 ## Abstract
 
-A certified split point lets a parallel lexer cut unlexed input at a single byte with the serial token stream provably
-preserved, but several conventional token sets in the predecessor's controlled study certify no byte once string,
-comment, or whitespace-run forms are included ([arXiv:2608.03473v2](https://arxiv.org/abs/2608.03473v2)). We generalize
-from a byte to a bounded window, a byte string after which the position where the current token began is known,
-regardless of surrounding context. We certify the directly usable form of that recovery, namely that the token covering
-the window's final byte begins at the returned origin. The certificate is conditional on occurrence and may be vacuous;
-every applicability figure counts only windows carrying an asserted completely tokenizable occurrence witness. We give a
-conservative model of a maximal-munch scanner's possible histories across a window, prove it sound, and decide
-reachability in that model exactly by exhausting a finite quotient of its reachable configurations. Within the flat,
-completely tokenizable scope, model-positive answers are semantic certificates; negatives are relative to the model,
-which deliberately refuses some windows a greedy scanner would allow. Whether the model certifies any window, plain or
-witnessed, is PSPACE-complete, and a shortest window can need `2^Ω(√n)` bytes over `n` live states. Two smaller searches
-decide plain model existence, the second shipped in release 2.2.0 of munch. In a sample of 400 random token sets, 322 of
-the 337 sets certifying no byte gain a witnessed window, with zero inconclusive searches, and every exact-empty row of
-the predecessor's study gains a witnessed window of two to four bytes. The analysis runs once after automaton
-construction, using only the compiled tables and no input. A boundary profile marks each gap of a window forced, crossed
-or open, and a window-local cut is sound exactly at forced gaps.
+A certified split point lets a parallel lexer cut unlexed input at one byte with the serial token stream provably
+preserved, but several conventional token sets in the predecessor's study certify no byte once string, comment, or
+whitespace-run forms are included ([arXiv:2608.03473v2](https://arxiv.org/abs/2608.03473v2)). We generalize from a byte
+to a bounded window, a byte string such that, whatever the context, the token covering its final byte begins at a known
+origin. Since the certificate is conditional on occurrence and may be vacuous, every applicability figure counts only
+windows carrying an asserted completely tokenizable occurrence witness. We give a conservative model of a maximal-munch
+scanner's possible histories across a window, prove it sound, and decide reachability in it exactly by exhausting a
+finite quotient of its reachable configurations. Within the flat, completely tokenizable scope, model-positive answers
+are semantic certificates; negatives are relative to the model, which refuses some windows a greedy scanner would allow.
+For both model and semantic certificates, existence is PSPACE-complete with or without a witness requirement, and a
+shortest window has `2^Θ(n)` bytes in the worst case over at most `n` live states. Two smaller searches decide plain
+model existence, the second shipped in release 2.2.0 of munch. Of 400 random token sets, 322 of the 337 certifying no
+byte gain witnessed windows and four more gain model certificates with occurrence unresolved. No model search reaches
+its threshold. The predecessor's exact-empty rows all gain witnessed windows of two to four bytes. A boundary profile
+marks each gap of an occurring window forced, crossed or open, and a window-local cut is sound exactly at forced gaps.
+Whether a given gap is ever a boundary and whether it is open are PSPACE-complete, while occurrence, the forced verdict
+and a given origin's certificate are NL-complete.
 
 ## 1 Introduction
 
@@ -70,11 +70,11 @@ The contributions are:
   predecessor, and a soundness proof by a representation invariant (Section 3, Section 4).
 - A finite quotient of the model's reachable configurations, exact for them by a stated single-occupancy invariant,
   turning breadth-first search over windows into a terminating decision procedure for the model (Section 5).
-- Two specializations: at length one the model certifies exactly the bytes the published predicate certifies, so the
-  multi-byte construction is that predicate's conservative continuation; and over a prefix code the certified windows
-  that occur are exactly the synchronizing splits of code theory whose right half sits inside one codeword, which places
-  the classical case as the special case it is (Section 7).
-- Two smaller exact searches for the model (Section 6): a quotient of at most `3^n` keys over `n` live states, and an
+- Two specializations (Section 7). At length one the model certifies exactly the bytes the published predicate reports,
+  so the multi-byte construction is that predicate's conservative continuation. Over a prefix code, where the
+  certificate is code synchronization under another name, an occurring window is certified at a given origin exactly
+  when the split there is synchronizing and its right half is a prefix of a codeword.
+- Two smaller exact searches for the model (Section 6), a quotient of at most `3^n` keys over `n` live states and an
   unambiguous automaton of at most `(n + 2) · 2^(n-1)` states that follows one chosen origin. The second returns a
   shortest certified window, bounds its length, and is the search release 2.2.0 of munch ships as
   `shortest_split_window()`.
@@ -82,7 +82,8 @@ The contributions are:
   from DFA intersection non-emptiness with one token kind and five symbols that fixes the minimum window length at
   `m + 3` plus the length of the shortest word that all `m` source DFAs accept. A family of such token sets has shortest
   windows of length `2^Ω(√n)`, with exact minima 4, 6, 11, 18, 67, 68, 429, 850 and 2,531 for its first nine members,
-  searched by a figure program.
+  searched by a figure program, and sources that share one transition table give shortest windows of `2^Ω(n)` bytes, the
+  largest order possible.
 - A characterization of the cloud (Section 9), whose hypotheses are exactly those of arbitrary token factorizations of
   concatenations of tokens, greedy or not. From this the vacuous window follows, token kinds may be erased before any
   search, and the model is exact wherever every factorization is the scan's, a class decided in polynomial time that
@@ -99,11 +100,21 @@ The contributions are:
   scanner (Section 12).
 - A boundary profile of a window, the verdict forced, crossed or open at each of its gaps over every occurrence, with
   the certificate as one of its patterns, and a proof that a window-local cut rule that reconciles nothing is sound
-  exactly at forced gaps (Section 11). Over a token set with a longest token, a window containing a forced gap forces
-  every boundary the scan from that gap commits with its lookahead inside the window, while no single width decides
-  every gap of the JSON tokenization, since no bounded window sees whether an unmatched quote lies to its left. Release
-  2.1.0 of munch decides the profile exactly within its search cap, and an exploratory campaign over JSON, C-like and
-  byte-pair token sets measures what it adds to the certificate.
+  exactly at forced gaps (Section 11). Deciding whether a given gap of a given window is a boundary at some occurrence
+  is PSPACE-complete, and so is deciding whether it is open, by a second reduction from DFA intersection non-emptiness
+  with one token kind and five symbols whose window always occurs. Whether the window occurs, whether a token crosses a
+  given gap at some occurrence, the verdict forced and Definition 1 for a given pair, plain or witnessed, are
+  NL-complete, and an occurrence and a crossing are each found in an input of linear length when one exists, an
+  occurrence refuting an origin in one of quadratic length, which is the order some token sets need, while a shortest
+  input refuting a crossed verdict can need `2^Ω(n)` bytes over `n` states, the largest order possible for a window of
+  at most `n` bytes. Whether a token set has a certified split window at all is PSPACE-complete, and so is whether it
+  has a witnessed one, even with one token kind over two symbols and every state live. Either way a shortest one has at
+  most `(n + 1) · 7^n + 4^n + 1` bytes over `n` states and can need `2^Ω(n)`, so its length is `2^Θ(n)` in the worst
+  case. Over a token set with a longest token, a window containing a forced gap forces every boundary the scan from that
+  gap commits with its lookahead inside the window, while no single width decides every gap of the JSON tokenization,
+  since no bounded window sees whether an unmatched quote lies to its left. Release 2.1.0 of munch decides the profile
+  exactly within its search cap, and an exploratory campaign over JSON, C-like and byte-pair token sets measures what it
+  adds to the certificate.
 
 The probe decides certificates and model-search results offline from the compiled tables after automaton construction;
 the occurrence witnesses and scanner checks are generated executions against the shipped scanner. Executable checks in
@@ -160,7 +171,9 @@ does not take, as Section 9 explains. The artifact asserts the model prediction 
 targeted witness search. Every applicability figure in this paper counts only witnessed certificates. The named rows pin
 their witness inputs in the artifact, and for each of the 322 witnessed random grammars the probe constructs and
 verifies a concrete completely tokenizable input, with the 322 aggregate asserted; a certificate the bounded witness
-search cannot witness is counted as unresolved, never as a rescue.
+search cannot witness is counted as unresolved, never as a rescue. Whenever a statement specifies an alphabet, its
+inputs and its windows are words over that alphabet, since a byte that no token contains occurs in no completely
+tokenizable input and is a certified split window of one byte by vacuity alone.
 
 For `k = 1` Definition 1 is the boundary guarantee of a certified split point, since the token containing the single
 byte begins at it. Three guarantees should be kept apart, and this paper certifies the strongest. Model unanimity
@@ -230,18 +243,18 @@ that token's prefix state after consuming through byte `t+j-1`, and let `ω_j = 
 *Proof.* Every `ρ_j` is live. It is reachable through the actual token prefix, and co-accessible because its token ends
 at some `e >= t+j` with `δ*(ρ_j, x[t+j .. e)) = δ*(q0, x[σ_j .. e))`, and the right side is accepting.
 
-*Base, `j = 1`.* If `σ_1 < t`, the state `p = δ*(q0, x[σ_1 .. t))` is live and lies in `C0` paired with `before`; the
-direct step carries `p` to `(ρ_1, before)`. The rename cannot interfere, since `p` has consumed at least one byte, which
-makes `p = q0` possible only if a non-empty live path returns to `q0`, and that disables the rename. If `σ_1 = t`, then
-`ρ_1 = δ(q0, w0)` and the seed fires, because `C0`, which is all of the live states, contains a live accepting state.
-The fixed input is completely tokenizable and non-empty, so its first token traces an accepting path from `q0`, making
-`q0` live with an accepting state reachable from it, and a reachable accepting state is trivially co-accessible.
+*Base, `j = 1`.* If `σ_1 < t`, the state `p = δ*(q0, x[σ_1 .. t))` is live and lies in `C0` paired with `before`, and
+the direct step carries `p` to `(ρ_1, before)`. The rename cannot interfere, since `p` has consumed at least one byte,
+which makes `p = q0` possible only if a non-empty live path returns to `q0`, and that disables the rename. If `σ_1 = t`,
+then `ρ_1 = δ(q0, w0)` and the seed fires, because `C0`, which is all of the live states, contains a live accepting
+state. The fixed input is completely tokenizable and non-empty, so its first token traces an accepting path from `q0`,
+making `q0` live with an accepting state reachable from it, and a reachable accepting state is trivially co-accessible.
 
-*Step, `j` to `j+1`.* If the byte at `t+j` continues its token, `σ_(j+1) = σ_j`, and the direct step carries
-`(ρ_j, ω_j)` to `(δ(ρ_j, w_j), ω_j)`; the rename does not overwrite the origin, by the same re-entrancy argument as in
-the base. If the byte at `t+j` begins a token, the previous token ended at `t+j`, so `δ*(q0, x[σ_j .. t+j))` accepts;
-that state is `ρ_j`, in `C_j` by hypothesis, so the seed fires and emits exactly `(δ(q0, w_j), j) = (ρ_(j+1), ω_(j+1))`.
-∎
+*Step, `j` to `j+1`.* If the byte at `t+j` continues its token, then `σ_(j+1) = σ_j` and the direct step carries
+`(ρ_j, ω_j)` to `(δ(ρ_j, w_j), ω_j)`. In this case the rename does not overwrite the origin, by the same re-entrancy
+argument as in the base. If the byte at `t+j` begins a token, the previous token ended at `t+j`, so
+`δ*(q0, x[σ_j .. t+j))` accepts. That state is `ρ_j`, in `C_j` by hypothesis, so the seed fires and emits exactly
+`(δ(q0, w_j), j) = (ρ_(j+1), ω_(j+1))`. ∎
 
 The lemma states containment, not equality, so the cloud may carry hypotheses no execution realizes. The surplus is
 harmless in one direction and load-bearing in the other. At a realized occurrence in a completely tokenizable input,
@@ -258,7 +271,7 @@ input was an arbitrary completely tokenizable one containing `W` at `t`. ∎
 about; the invariant tracks where the *final* segmentation's tokens begin, not where the read head wanders. A boundary
 that a rewind later exposes was seeded by the model step reading the first byte after the accepting position justifying
 it. This holds when lookahead crosses the window's left edge, when several accepting positions are passed, and across
-chains of consecutive rewinds; each is an instance of the step case.
+chains of consecutive rewinds, each case being an instance of the step case.
 
 ## 5 The finite quotient and the decision procedure
 
@@ -271,7 +284,7 @@ state.
 
 An origin enters the cloud at most once per rule application, into a single state, and the deterministic step moves it
 to at most one successor, so it continues in one state or dies. At offset `j` the acceptance seed and the
-non-re-entrant-`q0` rename can both propose the fresh origin `j`; both target `δ(q0, w_j)`, and set semantics coalesces
+non-re-entrant-`q0` rename can both propose the fresh origin `j`. Both target `δ(q0, w_j)`, and set semantics coalesces
 the identical pair, so single occupancy survives the collision. Origins may die, which is why the invariant says at most
 one. The pre-window origin differs by design, since it may occupy many states, and it is held apart as the Boolean
 support set `B`. An arbitrary cloud could violate the invariant, placing one origin in two states, and there the
@@ -282,7 +295,7 @@ everything below. The key of a cloud is the pair `κ(C) = (B, m)` with `m(q) = m
 `κ(C_u) = κ(C_v)`, then for every byte `b` the successors `step(C_u, b, |u|)` and `step(C_v, b, |v|)` are either both
 empty or both non-empty, and when non-empty, `κ(step(C_u, b, |u|)) = κ(step(C_v, b, |v|))`, with the certification
 verdict agreeing on both sides. For successor-key equality alone, it is enough that the inserted offsets be *fresh*,
-exceeding every in-window origin of their respective clouds; the certification verdict additionally needs legal depths,
+exceeding every in-window origin of their respective clouds. The certification verdict additionally needs legal depths,
 and the search supplies both, since it steps with the word lengths `|u|` and `|v|` and every origin in a length-`ℓ`
 cloud lies below `ℓ`. Freshness is not decorative. Over `{a⁺, b}` the cloud after `a` carries origin 0, and stepping on
 `a` with offset 0 merges the seed into that origin while offset 1 creates a second one, so the same key would have two
@@ -297,11 +310,11 @@ each origin from its unique state (Invariant 1), so origins arriving at `q'` fro
 The exact update at each target sums the old-origin contributions arriving there and adds one fresh origin if the seed
 or the non-re-entrant-`q0` rename fires toward it. The seed and the rename are combined by logical or, since they denote
 the same fresh origin and the cloud is a set. The update then saturates at two. When `q0` is non-re-entrant, no live
-edge enters `q0`, so after the first step no reachable cloud contains `q0` with an in-window origin; for a
+edge enters `q0`, so after the first step no reachable cloud contains `q0` with an in-window origin. For a
 non-re-entrant start state the rename decision is readable from `q0 ∈ B`. Whether the rename fires is determined by
-`q0 ∈ B`, which is key-readable, and by re-entrancy, which is fixed automaton data outside the key; whether the seed
-fires is determined by the key's accepting support; that the fresh origin collides with no surviving origin is the
-freshness hypothesis. Note that saturation commutes with this update in the only direction needed, since a saturated
+`q0 ∈ B`, which is key-readable, and by re-entrancy, which is fixed automaton data outside the key. Whether the seed
+fires is determined by the key's accepting support, and the freshness hypothesis says that the fresh origin collides
+with no surviving origin. Note that saturation commutes with this update in the only direction needed, since a saturated
 state maps its surviving origins together, and a successor's saturated sum computed from saturated counts equals the
 saturation of the exact sum. A state's count can also drop to zero when its transition is missing, which the update
 handles as an empty contribution. Fresh origins are equivariant under renaming of origin values, and no rule ever reads
@@ -310,7 +323,7 @@ certification of the full window is the key predicate `B = ∅` with total count
 identify one total count with one origin in one state. ∎
 
 One tempting simplification is false and worth flagging, namely that a state holding two origins can never contribute to
-unanimity later. Over `{a⁺, b}`, after `aa` the `a`-state carries two in-window origins, as well as `before`; on `b` all
+unanimity later. Over `{a⁺, b}`, after `aa` the `a`-state carries two in-window origins, as well as `before`. On `b` all
 of them die while their pre-step acceptance opens the gate for one fresh `b`-origin, and the cloud is unanimous. The
 true statement, and the one the lemma uses, is that co-located origins either follow the same live successor together or
 all die, and that origins which die leave no trace the key must distinguish.
@@ -322,19 +335,19 @@ each key expands into at most 256 successors, each computable from the key in `O
 `O(256 · |Q⁺| · 6^|Q⁺|)` time and `O(|Q⁺| · 6^|Q⁺|)` space.
 
 By Lemma 3 the walk cannot miss the existence of a certifying continuation, nor change the minimum certified length.
-After one matched step both successor clouds sit at fresh depths again, so the lemma inducts over every common suffix;
-breadth-first order retains a shallowest representative of each key, and a certifying suffix from a discarded deeper
+After one matched step both successor clouds sit at fresh depths again, so the lemma inducts over every common suffix.
+Breadth-first order retains a shallowest representative of each key, and a certifying suffix from a discarded deeper
 occurrence yields an equal or shorter certificate from the retained representative. Deduplication may still skip
-individual certified words; exhaustion proves the model admits none at any length. Exhaustion does not prove semantic
-non-existence, because the model is conservative (Section 8).
+individual certified words, but exhaustion proves the model admits none at any length. Exhaustion does not prove
+semantic non-existence, because the model is conservative (Section 8).
 
-The displayed bounds describe an abstract key-to-key search; the probe realizes the procedure with one concrete
+The displayed bounds describe an abstract key-to-key search, while the probe realizes the procedure with one concrete
 representative cloud and word per key, using the quotient for deduplication, so its cost additionally depends on
-representative size. It is budgeted, with three outcomes: certified, exhausted, and inconclusive once the retained key
-count exceeds a fixed threshold of 200,000 keys. The evaluation below finds zero inconclusive searches, and the retained
-key counts it gives are one indicator of the search footprint rather than a complete cost model. Section 6 replaces the
-`6^|Q⁺|` bound by `3^|Q⁺|` and by `(|Q⁺| + 2) · 2^(|Q⁺| - 1)`, and shows that no polynomial algorithm decides the
-question unless P = PSPACE.
+representative size. It is budgeted, and its three outcomes are certified, exhausted, and inconclusive once the retained
+key count exceeds a fixed threshold of 200,000 keys. The evaluation below finds zero inconclusive model searches, and
+the retained key counts it gives are one indicator of the search footprint rather than a complete cost model. Section 6
+replaces the `6^|Q⁺|` bound by `3^|Q⁺|` and by `(|Q⁺| + 2) · 2^(|Q⁺| - 1)`, and shows that no polynomial algorithm
+decides the question unless P = PSPACE.
 
 ## 6 Smaller searches and the complexity of the model
 
@@ -343,7 +356,7 @@ retained-key counts stand against its `6^n` bound. Two smaller presentations dec
 coarsens the key to three statuses per state; the second guesses the one origin that survives and is an unambiguous
 automaton over the certified windows. The second is the search release 2.2.0 of munch ships, and it is also the route to
 the model's exact complexity. Existence of a model certificate is PSPACE-complete, and a shortest window can need
-`2^Ω(√n)` bytes.
+`2^Ω(n)` bytes.
 
 ### 6.1 A three-status quotient
 
@@ -391,7 +404,7 @@ carrying any other origin occupy exactly the states of `S`. The initial state is
 the `V(∅, q)`. The state `U(∅)` accepts nothing and has no successor, and no transition enters it, so it is reached only
 as the initial state of a token set with no live state.
 
-Take a byte `b` at `U(S)`; the rename fires when `q0 ∈ S` and `q0` is not re-entrant. Let `T` be the live image of `S`
+Take a byte `b` at `U(S)`. The rename fires when `q0 ∈ S` and `q0` is not re-entrant. Let `T` be the live image of `S`
 under `b`, with the contribution of `q0` set aside when the rename fires. A fresh origin is born at `r = δ(q0, b)` when
 `r` is live and either `S` contains an accepting state or the rename fired. Without a birth the successor is `U(T)`,
 when `T` is non-empty. With a birth there are two successors. Declining the birth moves to `U(T ∪ {r})`, and choosing it
@@ -410,7 +423,7 @@ the support of `C_u`, since the gate reads only which occupied states accept, th
 live image, the rename is read from `q0 ∈ S` as in Theorem 3, and a fresh origin occupies `δ(q0, b)`. In `V(S, q)` after
 `u`, the cloud `C_u` contains a pair `(q, o)`, where `o` is the origin chosen when the run left `U`, and `S` is the set
 of states occupied by pairs with an origin other than `o`. The pair `(q, o)` moves to `(δ(q, b), o)` when that state is
-live; otherwise `o` dies, and no later cloud contains it, since every origin born later carries a larger offset. The
+live. Otherwise `o` dies, and no later cloud contains it, since every origin born later carries a larger offset. The
 other pairs move to the live image of `S`, and the fresh origin, when born, is another origin and lands at `δ(q0, b)`,
 while the gate reads the support `S ∪ {q}` of `C_u`. The successor `V(T, q')` thus records exactly the state of `o` and
 the support of the others, as long as `q' ∉ T`. When `q' ∈ T` the run stops, and nothing is lost. The state `q'` then
@@ -458,10 +471,10 @@ named token sets. Table 4 gives the nodes the search holds when its shortest win
 
 The upper bound of Corollary 1 is matched by a lower bound that holds with one token kind and five symbols. The source
 problem is intersection non-emptiness: given complete DFAs `A_1, ..., A_m` over a common alphabet, is some word accepted
-by all of them? Kozen proved it PSPACE-complete (Kozen, FOCS 1977). We take the source DFAs over the alphabet `{a, b}`,
-which loses nothing, since a fixed-length binary code of the letters, decoded by a polynomial number of added states
-with a rejecting sink for malformed codes, carries any alphabet to this one. We also keep in each `A_i` only the states
-reachable from its start, which changes no language.
+by all of them? Kozen proved it PSPACE-complete (Kozen, FOCS 1977, Lemma 3.2.3, p. 261). We take the source DFAs over
+the alphabet `{a, b}`, which loses nothing, since a fixed-length binary code of the letters, decoded by a polynomial
+number of added states with a rejecting sink for malformed codes, carries any alphabet to this one. We also keep in each
+`A_i` only the states reachable from its start, which changes no language.
 
 **Theorem 5 (PSPACE-completeness).** Deciding whether a compiled token set admits a model certificate of any length is
 PSPACE-complete. So is deciding whether it admits a witnessed one. Both remain PSPACE-hard for token sets with one token
@@ -473,7 +486,7 @@ symbols `a`, `b`, `r`, `t`, `#`, and its states are the root `q0`, an error stat
 timers `T_0, ..., T_m`, headers `H_0, ..., H_m`, and a disjoint copy `(i, q)` of every state `q` of every `A_i`. The
 root is the only state that does not accept, and nothing enters it; every other state accepts the one token kind. The
 root has the two transitions `q0 -r-> H_0` and `q0 -#-> Y`, and the other transitions are in Table 1, where an entry
-marked undefined is absent; on the remaining bytes of the alphabet no state has a transition.
+marked undefined is absent. On the remaining bytes of the alphabet no state has a transition.
 
 **Table 1.** The transitions of the reduction's token DFA at every state but the root, which has `q0 -r-> H_0` and
 `q0 -#-> Y` only. The letter `x` ranges over the source alphabet `{a, b}`.
@@ -565,18 +578,23 @@ model-certified window of the constructed token set has length `ℓ + m + 3`, an
 ending in `r^L t w #` with `L >= m + 1` and `|w| >= ℓ`, so its length is at least `ℓ + m + 3`; a witnessed window is
 certified, so the same bound holds for it. ∎
 
-The theorem concerns the model and says nothing about the complexity of deciding Definition 1 itself, which the model
-only approximates from below. It also concerns the compiled automaton, and since a token set given as regular
-expressions may compile to exponentially many states, no bound in the expression size is claimed. Unless P = PSPACE it
-rules out a polynomial-time algorithm for the model's existence question, so replacing the quotient by another search
-cannot give one. Theorem 6 below shows separately that returning a certified window can require superpolynomially many
-bytes.
+The theorem concerns the model, which only approximates Definition 1 from below. It also concerns the compiled
+automaton, and since a token set given as regular expressions may compile to exponentially many states, no bound in the
+expression size is claimed. Unless P = PSPACE it rules out a polynomial-time algorithm for the model's existence
+question, so replacing the quotient by another search cannot give one. Theorem 6 below shows separately that returning a
+certified window can require exponentially many bytes. For the definition itself, the decision for a given pair `(W, o)`
+is NL-complete by Theorem 13, while Theorem 12 proves two neighboring questions PSPACE-complete, whether a given gap of
+a given window is a boundary at some occurrence and whether it is open. Whether a token set has a witnessed certified
+split window at all is PSPACE-complete as well, by Proposition 3, whose reduction is a different one, from the words of
+rank one of a partial automaton, and Theorems 14 and 15 give the length of a shortest one, which is exponential in the
+worst case too. Theorem 15 proves both without the witness.
 
 ### 6.4 Shortest windows can be long
 
 Corollary 1 bounds a shortest certified window by `K - 1`, which is exponential in `n`. The reduction instantiated on
 cycles gives shortest windows of length `2^Ω(√n)`, so no polynomial bound holds, and the figure program searches their
-exact minima.
+exact minima. Instantiated on sources that share one transition table it gives `2^Ω(n)`, which is the order of the upper
+bound.
 
 For `m >= 1` let the source `A_i`, for `i = 1, ..., m`, be a cycle of `i` states numbered `0, ..., i - 1`, placed behind
 the header `H_(i-1)`. It starts at 0, both letters advance by one modulo `i`, and it accepts at state `i - 1` alone, so
@@ -586,9 +604,15 @@ length -1 modulo `L_m`, and `a^(L_m - 1)` is a shortest one. The reduction gives
 witnessed, has length `R_m = L_m + m + 2`. One such window is `r^(m+1) t a^(L_m - 1) #`, certified at its last byte and
 completely tokenizable as two tokens.
 
-**Theorem 6 (long windows).** For every `m >= 1` the token set above has `n_m` live states and a shortest certified
-window of length `R_m >= 2^m / (m + 1) + m + 2`. Hence `R_m = 2^Ω(√n_m)`. No polynomial `p` bounds the length of a
-shortest model-certified window by `p(n)` over all compiled token sets, nor of a shortest witnessed one.
+**Theorem 6 (long windows).** For every `m >= 1` the token set above has `n_m` live states in its constructed automaton,
+which is not minimal, and a shortest certified window of length `R_m >= 2^m / (m + 1) + m + 2`. Hence `R_m = 2^Ω(√n_m)`.
+No polynomial `p` bounds the length of a shortest model-certified window by `p(n)` over all compiled token sets, nor of
+a shortest witnessed one. Other sources give more. For infinitely many `N` there is a token set with one token kind over
+five symbols whose automaton has `N` states, all live, and whose shortest model-certified window has `2^Ω(N)` bytes, as
+has its shortest witnessed one. No larger order is possible, since over `n` live states a shortest model-certified
+window has fewer than `K` bytes, by Corollary 1, and a shortest witnessed one fewer than `K · (n + 1) · 2^n`, the size
+of the product of Theorem 10. These are bounds for the certificates of the model. The shortest windows of Definition 1,
+witnessed or not, have bounds of their own, of the same order, in Theorems 14 and 15.
 
 *Proof.* It remains to show `L_m >= 2^m / (m + 1)`. Fix a prime `p` and write `v_p` for the exponent of `p` in an
 integer. By the formula for the exponent of `p` in a factorial,
@@ -596,20 +620,37 @@ integer. By the formula for the exponent of `p` in a factorial,
 and the floor of a sum exceeds the sum of the floors by at most one. Terms with `p^j > m` vanish, so
 `v_p(binom(m, k)) <= ⌊log_p m⌋ = v_p(L_m)`. This holds for every prime, so every `binom(m, k)` divides `L_m`. In
 particular `L_m >= max_k binom(m, k) >= 2^m / (m + 1)`, since the `m + 1` binomial coefficients sum to `2^m`. Since
-`n_m` is quadratic in `m`, `m = Θ(√n_m)` and the growth follows. For the last claim, `R_m / n_m^d` is unbounded for
-every fixed degree `d`. ∎
+`n_m` is quadratic in `m`, `m = Θ(√n_m)` and the growth follows. For the claim about polynomials, `R_m / n_m^d` is
+unbounded for every fixed degree `d`.
+
+For the larger order, Vorel (AFL 2014, Theorem 8, p. 378) gives, for infinitely many sizes `|Q|`, a strongly connected
+complete deterministic automaton `B = (Q, {a, b}, δ)`, its two letters written `a` and `b` here, and a set `S ⊆ Q` that
+some word sends to a single state, such that a shortest word doing so has length `2^Ω(|Q|)`. Let `z` be a shortest one,
+let `δ(S, z) = {f}` and `S = {s_1, ..., s_m}`, and take the sources `A_i = (Q, {a, b}, δ, s_i, {f})`. Every source
+accepts `z`, and a word every source accepts sends `S` to `f` and is no shorter than `z`. The sources have the same
+transitions and the same accepting state, so the token automaton of Section 6.3 can hold `Q` once in place of its `m`
+copies. The rows of the states `(i, q)` in Table 1 become one row for each state `q` of `Q`, with `#` undefined at `f`
+alone, and `t` leads from `H_(i-1)` to `s_i`. Lemmas 4 and 5 hold for this automaton, with `(i, δ_i(s_i, w))` read as
+`δ(s_i, w)`. Their proofs use of a source state only its row of the table. The pairs that `t` sends from the headers to
+`s_1, ..., s_m` carry `m` distinct origins, so they stay `m` pairs whatever states they come to share, and all of them
+die on the final `#` exactly when `w` sends every `s_i` to `f`. Corollary 2 follows as before, and a shortest
+model-certified window, plain or witnessed, has `|z| + m + 3` bytes. The automaton has `N = |Q| + 2m + 6 <= 3 |Q| + 6`
+states, so that length is `2^Ω(N)`. Every state is live, since every state but the root accepts and the states of `Q`
+are reached from `s_1`, `B` being strongly connected. For the upper bounds, a shortest accepting path of the
+chosen-origin automaton repeats no state, and neither does one of the product. ∎
 
 The family does not reach every size `n`, but its sizes are dense enough. Since `n_(m+1) - n_m = m + 3 <= n_m`, for
 every `n >= 9` the member with the largest `n_m <= n` has `n < 2 n_m`, so some token set with at most `n` live states
 has a shortest window of length `2^Ω(√n)`. Table 2 gives the exact minima for `m = 1, ..., 9`. The figure program finds
 them by the chosen-origin search, replays each window through the plain cloud at the claimed origin, scans it, and
 asserts every entry of the table. The result is explicit, a shortest window that is long and not merely hard to find,
-though it does not exclude a compressed description of long windows. It concerns the model, and the semantic question
-meets the constraint only through the model.
+though it does not exclude a compressed description of long windows. It concerns the model, and for the shortest windows
+of Definition 1, witnessed or not, Theorems 14 and 15 give the worst-case order `2^Θ(n)`.
 
-**Table 2.** The long-window family: live states, `lcm(1, ..., m)`, the shortest certified window's length, equal to
-`L_m + m + 2` on every row, and the nodes the chosen-origin search holds when it appears. Every window is certified at
-its last byte and scans as two tokens.
+**Table 2.** The long-window family: the constructed automaton's live states (the minimal one has three fewer from
+`m = 2` on), `lcm(1, ..., m)`, the shortest certified window's length, equal to `L_m + m + 2` on every row, and the
+nodes the chosen-origin search holds when it appears. Every window is certified at its last byte and scans as two
+tokens.
 
 | `m` | States `n_m` | `L_m` | Shortest window | Nodes held |
 |----:|-------------:|------:|----------------:|-----------:|
@@ -656,16 +697,16 @@ are the single pair `(δ(q0, b), 0)`, so `C_1` is the singleton and the model ce
 model certifies `(b, 0)`, so `C_1` is non-empty and unanimous at origin 0. If `b` were not useful, the first two items
 would be absent and every pair of `C_1` would carry `before` from the third, or `C_1` would be empty; either way
 certification fails, so `b` is useful. If some live `q ≠ q0` had a live-target `b`-transition, the third item would
-place a `before`-pair in `C_1`, breaking unanimity; so none does. If `q0` were re-entrant, the second item would place
-`(δ(q0, b), before)` in `C_1` beside the seed's origin-0 pair, breaking unanimity; so `q0` is not re-entrant. These are
+place a `before`-pair in `C_1` and break unanimity, so none does. If `q0` were re-entrant, the second item would place
+`(δ(q0, b), before)` in `C_1` beside the seed's origin-0 pair and break unanimity, so `q0` is not re-entrant. These are
 exactly the predicate's three clauses. ∎
 
 The vacuous case lands on the predicate's side of the published condition-versus-predicate distinction by construction,
 since a byte no live state consumes empties the cloud, which the model refuses, exactly as the shipped predicate
 withholds a byte the bare condition certifies vacuously. At length one the model is therefore exactly the shipped
-predicate; the multi-byte construction is its conservative continuation. The artifact additionally asserts the agreement
-byte for byte on every grammar of the evaluation before each search; after Theorem 7 that check verifies only the
-implementation.
+predicate, and the multi-byte construction is its conservative continuation. The artifact additionally asserts the
+agreement byte for byte on every grammar of the evaluation before each search. After Theorem 7, that check verifies only
+the implementation.
 
 ### 7.2 The prefix-code case
 
@@ -673,7 +714,7 @@ The other specialization is by token set. A *prefix code* `X ⊆ Σ⁺` has no w
 read as a token set it is the setting where the certificate needs neither maximal-munch priority nor the cloud's origin
 bookkeeping. At any boundary at most one codeword begins, so the completely tokenizable inputs are exactly `X*`, each
 with the one factorization the scan computes. Code theory has two notions of a boundary forced by bounded context. A
-*synchronizing pair* of `X` (Berstel, Perrin and Reutenauer, Cambridge University Press 2010) is a pair
+*synchronizing pair* of `X` (Berstel, Perrin and Reutenauer, Cambridge University Press 2010, p. 375) is a pair
 `(x, y) ∈ X* × X*` such that `u x y v ∈ X*` implies `u x ∈ X*` and `y v ∈ X*` for all `u, v ∈ Σ*`. The second comes from
 the synchronization pairs of Fici, Romana, Sciortino and Urbina (MFCS 2025, Section 3.3), stated there for circular
 factors of a morphic image. Specializing them to a morphism `μ` sending the letters of an alphabet `Γ` to the codewords,
@@ -695,15 +736,15 @@ one factorization, since at a boundary the codeword the text spells is the only 
 
 (1) If `(W, o)` is certified, every occurrence has a boundary at offset `o`, so the split is synchronizing, and the
 codeword covering the final byte begins at `o`, so `W_≥o` lies within that codeword from its start and is a prefix of
-it. Conversely, take an occurrence of `W` at offset `t` in a word of `X*`; the split being synchronizing puts a boundary
+it. Conversely, take an occurrence of `W` at offset `t` in a word of `X*`. The split being synchronizing puts a boundary
 at `t + o`, where some codeword `c'` begins. Let `c` be a codeword with prefix `W_≥o`. Were `c'` to end inside `W_≥o`,
 it would be a proper prefix of `c`, which a prefix code forbids; so `c'` extends through `W_≥o`, and the token covering
 the final byte begins at `t + o`.
 
 (2) Let `(x, y)` be a synchronizing pair and take an occurrence `u x y v ∈ X*`. Then `u x ∈ X*` places a boundary before
 `y`, and `y v ∈ X*` with `y ∈ X*` factors from that boundary through `y`'s own codewords, since at each of their starts
-the codeword the text spells is the one `y` contains; so `cm` begins at `|u x| + |c1 ... c(m-1)|` and covers the final
-byte of `xy`. Conversely, if `(W, o)` is certified with `W_<o ∈ X*` and `W_≥o ∈ X`, then every `u W v ∈ X*` has a
+the codeword the text spells is the one `y` contains. Hence `cm` begins at `|u x| + |c1 ... c(m-1)|` and covers the
+final byte of `xy`. Conversely, if `(W, o)` is certified with `W_<o ∈ X*` and `W_≥o ∈ X`, then every `u W v ∈ X*` has a
 boundary at `|u| + o`, so `u W_<o` is a concatenation of codewords and so is `W_≥o v`, which is the synchronizing-pair
 condition. ∎
 
@@ -741,7 +782,7 @@ are the whole of the surplus.
 *Example two.* Over `{ab, abc, c}` the window `abc` is semantically certified at origin 0, again universally, since `a`
 occurs only token-initially, so a token begins at `t`, and maximal munch prefers `abc` over `ab` there. The oracle
 confirms it over all inputs to length 12 with 932 occurrences and zero violations. Both examples instantiate the same
-`(u, uv, v)` shape; they share the mechanism and differ in prefix depth, the competing origin arriving one byte in for
+`(u, uv, v)` shape. They share the mechanism and differ in prefix depth, the competing origin arriving one byte in for
 the first and two bytes in for the second, where the accepting proper prefix `ab` seeds `c`, the segmentation `ab|c`
 that maximal munch forgoes.
 
@@ -756,7 +797,7 @@ the model refuses its emptied cloud, and such vacuous disagreements are not stri
 live state into a live state, so if only `q0` has a live-target `b`-transition and `q0` is not re-entrant, the predicate
 certifies `b` and, by Theorem 7, the model certifies `(b, 0)`, contrary to assumption. The exact condition of the
 predecessor thus fails for `b`, and its necessity theorem constructs a completely tokenizable input placing an
-occurrence of `b` strictly inside a token; at that occurrence the token containing `b` begins before `b`, so `(b, 0)` is
+occurrence of `b` strictly inside a token. At that occurrence the token containing `b` begins before `b`, so `(b, 0)` is
 not certified. ∎
 
 Non-vacuous conservatism is therefore a strictly multi-byte phenomenon. At length one the model is exact for occurring
@@ -896,7 +937,7 @@ commits `x1` and restarts, and by induction on `m` it commits `x2, ..., xm` and 
 For the decision, `Pref₊(X*)` is recognized by a nondeterministic automaton `P` over the live states, which starts at
 `q0`, follows `δ`, optionally resets to `q0` before any byte read from an accepting state, and accepts at every state
 reached after at least one byte. A path of `P` spells a sequence of accepted factors followed by a prefix of a live run,
-which completes to a factor, so the word is in `Pref₊(X*)`; conversely a non-empty prefix of `x1 ... xm` is spelled by
+which completes to a factor, so the word is in `Pref₊(X*)`. Conversely, a non-empty prefix of `x1 ... xm` is spelled by
 resetting at each factor's end. Now run one breadth-first search over pairs `(p, p')`, started at every pair `(q, q0)`
 with `q` a reachable accepting state, where `p` continues `δ` from `q` and `p'` runs `P` from `q0`, both over the same
 bytes, and a pair reached after at least one byte is marked as started. A started pair with `p` accepting is an
@@ -1032,11 +1073,11 @@ that force a scan to die, and each is proved or refuted against every death path
 proposing state, so the accessor returns only what holds for all of them. Block comments prove their closer; token sets
 whose windows share no such string give nothing and lose nothing.
 
-The window planner runs on this licence when it exists: candidate windows are generated only around occurrences of the
+The window planner runs on this license when it exists: candidate windows are generated only around occurrences of the
 core, visited in the exhaustive walk's own order and certified by the same memoized decision, so the plan is byte for
 byte the walk's, refusals included. A core too long to fit the longest window with a byte to spare concludes the walk's
 refusal without scanning, and a tail with no occurrence refuses later targets without another scan. The core is an
-accelerator's licence, never a certificate: every cut is still established by the certified window decision, and
+accelerator's license, never a certificate: every cut is still established by the certified window decision, and
 grammars without a proved core keep the exhaustive walk unchanged. Construction cost is discussed in
 [limits.md](limits.md).
 
@@ -1095,10 +1136,11 @@ it and ending after it, and the rule cuts `x` at `t + g`. The piece ending there
 and the piece beginning there emits none beginning before it, so the crossing token is emitted by neither and the
 concatenation differs from the tokenization. ∎
 
-The certificate is the case of one forced gap followed by crossed gaps to the window's end, and it supplies the anchor
-`t + o`. The proposition says what else a window supplies. A sound rule of width `H` cuts at no position that the forced
-gaps of windows of width at most `H` fail to name, and it may cut at every position they name. The profile at width `H`
-is the whole anchor supply of that width, of which the certificate names one member per window. The gap `k` after the
+A certificate at origin `o` is the case in which gap `o` is forced and the gaps `o + 1, ..., k - 1` are crossed, the
+earlier gaps and gap `k` being left free, and it supplies the anchor `t + o`. The proposition says what else a window
+supplies. A sound rule of width `H` cuts at no position that the forced gaps of windows of width at most `H` fail to
+name, and it may cut at every position they name. The profile at width `H` is the whole anchor supply of that width, of
+which a certificate names one member, and an occurring window has at most one certified origin. The gap `k` after the
 window is the member no origin can name, since a forced gap `k` of `W` is the certificate `(Wc, k)` for every byte `c`
 that can follow, one byte later.
 
@@ -1108,15 +1150,585 @@ splitting companion's offline verifiability theorem decides ([arXiv:2610.08854](
 since the boundary markings of completely tokenizable inputs form a regular language, recognized by its armed-run
 automaton, and its intersection with the markings holding an occurrence of `W` with, or without, a mark at gap `g`, the
 end-of-input closure counting as one, has decidable emptiness with a shortest counterexample. The profile is therefore
-decidable for every regular token set, and nothing is proved fresh here. Release 2.1.0 of munch decides both questions
-per gap, as `boundary_counterexample()` and `crossing_counterexample()`, which both run the one search of its exact
-window decision `window_counterexample()`, building the input byte by byte, breadth first, with its token boundaries
-guessed and every guess held to maximal munch. Each returns the shortest refuting input or, once it has exhausted its
-states under a cap on the states held at once, the proof that none exists; a search the cap stops settles nothing, and
-the gap is undetermined. The function `boundary_profile()` asks both questions at every gap and reads the verdicts off,
-giving `must` when only the first search exhausts without a counterexample, `never` when only the second does, and `may`
-when both find one. Whether the window occurs at all is decided once per window by `window_occurrence()` under the same
-cap, and `absent` is given at every gap or at none.
+decidable for every regular token set, and Theorems 12 and 13 below give the complexity over a compiled one. Release
+2.1.0 of munch decides both questions per gap, as `boundary_counterexample()` and `crossing_counterexample()`, which
+both run the one search of its exact window decision `window_counterexample()`, building the input byte by byte, breadth
+first, with its token boundaries guessed and every guess held to maximal munch. Each returns the shortest refuting input
+or, once it has exhausted its states under a cap on the states held at once, the proof that none exists; a search the
+cap stops settles nothing, and the gap is undetermined. The function `boundary_profile()` asks both questions at every
+gap and reads the verdicts off, giving `must` when only the first search exhausts without a counterexample, `never` when
+only the second does, and `may` when both find one. Whether the window occurs at all is decided once per window by
+`window_occurrence()` under the same cap, and `absent` is given at every gap or at none.
+
+The two existential questions behind a verdict differ in difficulty. Whether a gap is a boundary at some occurrence is
+PSPACE-complete, as is the verdict open, by the next theorem, while whether a token crosses it at some occurrence is
+NL-complete, as are the verdict forced and the certificate of a given pair, by Theorem 13. Both theorems measure the
+size of the compiled automaton and the window. The upper bounds of the first run the armed-run automaton of Section 9.3
+with the marks of Section 9.4, where an edge is marked when a token begins just before its byte.
+
+**Theorem 12 (gap verdicts).** Given a compiled token set, a window `W` and a gap `g` of `W`, deciding whether `g` is a
+boundary at some occurrence of `W` in a completely tokenizable input is PSPACE-complete, and so is deciding its
+complement, the verdict crossed of Definition 3. Deciding the verdict open is PSPACE-complete as well. All three remain
+PSPACE-hard when the token set has one token kind over five symbols and a start state that neither accepts nor is
+re-entered, and the window occurs in some completely tokenizable input, so that the verdict is not a vacuous one.
+
+*Proof.* *Membership.* The upper bound runs the armed-run automaton of Section 9.3 as it stands before the trim that
+gives `Z`. The trim removes no accepting run, and a successor in the untrimmed automaton is computed from the tables of
+the token automaton alone. An accepting run on an input `x` guesses a segmentation of `x` into accepted words, none of
+which extends within `x` to a longer accepted word from the same start. Every word of such a segmentation is the longest
+accepted word that begins where it does, so by induction from the left the segmentation is the maximal-munch
+tokenization of `x`, and the marked edges of the run read the first bytes of its tokens. A nondeterministic machine
+guesses an input byte by byte along a run from the start, holding the run's current state, a token state or the fresh
+boundary with a set of armed states, in `O(n)` bits for a token automaton of `n` states. It holds a counter as well. The
+value 0 says that no occurrence has been chosen, a value `c` with `1 <= c < k` that the last `c` bytes guessed are the
+first `c` bytes of the chosen occurrence, and the value `k`, which the counter then keeps, that the occurrence has been
+read. At a byte of its choice the machine moves the counter from 0 to 1, checking that byte against `w0`, and it checks
+each following byte against `W` until the counter is `k`. It keeps one bit for the gap. For `g < k` the bit is set when
+the edge reading `w_g` is marked and clear when it is not. For `g = k` the bit waits for the edge after the window,
+which sets it when marked and clears it otherwise, or for the end of the input, which sets it. The machine guesses the
+rest of the input and accepts when the counter is `k`, the run ends in an accepting state and the bit has the value
+asked for. Asked for a set bit, it accepts if and only if `g` is a boundary at some occurrence of `W` in a completely
+tokenizable input, and asked for a clear bit if and only if a token crosses `g` at some occurrence. A configuration is a
+state of the automaton, a counter value from 0 to `k` and a bit that is unset, set or clear, so there are at most
+`3 (k + 1)(n + 1) · 2^n` of them. An accepting computation need not repeat one, and a step counter of `O(n + log k)`
+bits bounds it. Both questions are therefore in NPSPACE, which is PSPACE. Since PSPACE is closed under complement and
+intersection, it holds the verdict crossed, the complement of the first question, and the verdict open, the conjunction
+of the two.
+
+*Hardness.* The reduction is from intersection non-emptiness (Kozen, FOCS 1977, Lemma 3.2.3, p. 261), the source problem
+of Section 6.3, with the two letters of the sources written `0` and `1`. Let `A_i = (Q_i, {0, 1}, δ_i, s_i, F_i)` for
+`i = 1, ..., m`, with `m >= 1`, be complete DFAs. The token DFA has the symbols `0`, `1`, `x`, `#`, `$` and one token
+kind. Its states are the root `q0`, level states `V_1, ..., V_(m+1)`, a state `U`, an end state `D`, and a disjoint copy
+`(i, q)` of every state `q` of every `A_i`. The root has the one transition `q0 -x-> V_1`, and the level states continue
+it by `V_i -x-> V_(i+1)` for `i = 1, ..., m`. The first level state has `V_1 -#-> U`, where `U` keeps itself on `0` and
+`1` and has `U -$-> D`. For `i = 1, ..., m` the level state `V_(i+1)` has `V_(i+1) -#-> (i, s_i)`, and a copy `(i, q)`
+has `(i, q) -b-> (i, δ_i(q, b))` for both letters `b` and, when `q ∉ F_i` and only then, `(i, q) -$-> D`. There are no
+other transitions, and the accepting states are `V_1` and `D`. The root does not accept and nothing enters it, the
+automaton has `Σ_i |Q_i| + m + 4` states, and it is built in polynomial time.
+
+The tokens are the single byte `x`, the words `x # y $` for every `y ∈ {0, 1}*`, and for `d = 2, ..., m + 1` the words
+`x^d # y $` with `y ∉ L(A_(d-1))`. A token of the last two forms has *level* `d` when it begins with `d` bytes `x`; the
+tokens of level 1 are the *bottom tokens*, and those of level `d >= 2` are the *testers* of `A_(d-1)`. Every token
+begins with `x` and holds `x` only in its leading run, of at most `m + 1` bytes, and a token that holds `#` has a level,
+with the `#` directly after the leading run, a word of `{0, 1}*` after that, and `$` as its last byte. For a word
+`y ∈ {0, 1}*` let `λ(y)` be the largest `d ∈ {2, ..., m + 1}` with `y ∉ L(A_(d-1))`, and 1 when every `A_i` accepts `y`.
+The window is `W = x^(m+1) #`, of `k = m + 2` bytes, and the gap is `g = m`, the gap before the last `x`. Three
+observations give the reduction.
+
+First, at every occurrence a token begins at the window's first byte, and a word `y $` follows the window. Let `z` be
+completely tokenizable with `W` at offset `t`. The token holding the `#` at `t + m + 1` has a level, so the bytes of `z`
+after the occurrence begin with `y $` for some `y ∈ {0, 1}*`. The token holding the `x` at `t` is the single byte, which
+begins at `t`, or it has that `x` in its leading run. In the second case the run ends where the bytes `x` of `z` from
+`t` on end, at `t + m`, and it has at most `m + 1` bytes, so it begins at `t` or later, hence at `t`.
+
+Second, the scan descends the levels. Let the scan of some input stand at a boundary followed by `x^d # y $` with
+`1 <= d <= m + 1`. From the root the bytes `x^d` lead to `V_d`. If `d = 1`, the `#` leads to `U`, the word `y` keeps `U`
+and `$` leads to `D`, which no transition leaves, so the scan commits the bottom token. If `d >= 2`, the `#` leads to
+`(d - 1, s_(d-1))` and `y` to `(d - 1, δ_(d-1)(s_(d-1), y))`, a state with a transition on `$` exactly when
+`y ∉ L(A_(d-1))`. With that transition the run ends in `D` and the scan commits the tester `x^d # y $`. Without it the
+run stops at the `$`, having passed no accepting state but `V_1`, since `D` is entered on `$` alone, so the scan commits
+the single `x` and stands at a boundary followed by `x^(d-1) # y $`. By induction on `d`, a scan standing at a boundary
+followed by `x^(m+1) # y $` commits `m + 1 - λ(y)` single bytes `x` and then the token of level `λ(y)`, because
+`A_(d-1)` accepts `y` for every `d > λ(y)`, and `A_(λ(y) - 1)` rejects it when `λ(y) >= 2`. In particular
+`x^(m+1) # y $` is completely tokenizable for every `y`, and `x^(m+1) # $` is a completely tokenizable input containing
+`W` whatever the sources are.
+
+Third, gap `m` is a boundary at an occurrence exactly when every source accepts the word that follows the window there.
+At an occurrence at offset `t` in a completely tokenizable `z`, the first observation puts the scan of `z` at the
+boundary `t` with `x^(m+1) # y $` ahead of it, and by the second the token holding the `#` begins at `t + m + 1 - λ(y)`.
+If `λ(y) = 1` that token begins at `t + m`, and gap `m` is a boundary. If `λ(y) >= 2` the token begins before `t + m`
+and ends after it, and it crosses gap `m`. Now `λ(y) = 1` says that every `A_i` accepts `y`. Hence gap `m` is a boundary
+at some occurrence of `W` in a completely tokenizable input if and only if some word is accepted by every `A_i`, the
+input `x^(m+1) # y $` serving for such a word `y`.
+
+The construction is polynomial, so deciding whether a gap is a boundary at some occurrence is PSPACE-hard, and since
+PSPACE is closed under complement, so is deciding the verdict crossed.
+
+The verdict open takes one more step. By the third observation a token crosses gap `m` at some occurrence exactly when
+some word `y` has `λ(y) >= 2`, the input `x^(m+1) # y $` serving for such a word, and so exactly when some `A_i` rejects
+some word. Gap `m` is therefore open exactly when some word is accepted by every `A_i` and some `A_i` rejects some word.
+Whether every `A_i` accepts every word is decided in polynomial time, by a search of each source for a reachable
+rejecting state, and on such instances intersection non-emptiness has the answer yes. The reduction maps them to the
+token set, window and gap built from one fixed family of sources with a common word and a source rejecting some word,
+such as the single source accepting only the empty word, where that gap is open, and every other instance to its own
+construction above, where gap `m` is open exactly when some word is accepted by every `A_i`. It stays polynomial, so
+deciding the verdict open is PSPACE-hard as well. For each of the three questions the token set has one token kind over
+five symbols, its start state neither accepts nor is re-entered, and its window occurs whatever the instance is. ∎
+
+This reduction establishes hardness for boundary existence, but not for crossing existence. At an occurrence followed by
+`y $` the token that holds the `#` begins at gap `m + 1 - λ(y)` of the window by the second observation, and a token of
+that kind beginning at gap `s` crosses exactly the gaps `s + 1, ..., m + 2`, while the single bytes before it cross
+none. For `1 <= j <= m` a token therefore crosses gap `j` at some occurrence exactly when `λ(y) >= m + 2 - j` for some
+word `y`, which holds exactly when one of the sources `A_(m+1-j), ..., A_m` rejects some word and is decided in
+polynomial time. Gap 0 is forced and gaps `m + 1` and `m + 2` are crossed whatever the sources are, so over these token
+sets the forced verdict of every gap of the window is easy. Theorem 13 below shows that it is easy over every token set.
+
+The reduction also fixes the length of a shortest refutation, as Corollary 2 fixes that of a shortest window.
+
+**Corollary 7 (long refutations).** In the token set of the proof above, suppose some word is accepted by every `A_i`,
+and let `ℓ` be the length of a shortest one. A shortest completely tokenizable input with an occurrence of `W` at which
+gap `m` is a boundary then has length `ℓ + m + 3`. For the cycle sources of Section 6.4, their letters written `0` and
+`1`, the token automaton has `(m² + 3m + 8)/2` states, all but one of them live when `m >= 2`, and the window `m + 2`
+bytes, and that length is `R_m = L_m + m + 2 >= 2^m / (m + 1) + m + 2`, which is `2^Ω(√n)` over the `n` live states of
+the automaton. Other sources give more. For infinitely many `N` there is a token set with one token kind over five
+symbols whose automaton has `N` states, all live, with a window of at most `N` bytes and a gap of it, such that a
+shortest input refuting the crossed verdict of that gap has `2^Ω(N)` bytes. No larger order is possible for such
+windows, since a gap of a window of `k` bytes that is a boundary at some occurrence, over a token automaton of `n`
+states, is a boundary at an occurrence in an input of fewer than `3 (k + 1)(n + 1) · 2^n` bytes.
+
+*Proof.* By the first and third observations an input of that kind contains `x^(m+1) # y $` for a word `y` every `A_i`
+accepts, so its length is at least `ℓ + m + 3`, and by the second observation `x^(m+1) # y $` with `y` a shortest such
+word is one. The cycle sources have `Σ_(i=1..m) i` states together, which gives the count, and a shortest word they all
+accept has length `L_m - 1` by Section 6.4, so `ℓ + m + 3 = L_m + m + 2`. The bound `L_m >= 2^m / (m + 1)` is from the
+proof of Theorem 6, and the live states are at most the states, whose number is quadratic in `m`. The copy of `A_1`, a
+single state that accepts every word and so has no transition on `$`, is not live, and for `m >= 2` every other state
+is, since every other source has a rejecting state, which each of its states reaches. Gap `m` is a boundary at an
+occurrence in that input, which therefore refutes the verdict crossed, and no shorter input does.
+
+For the larger order, Vorel (AFL 2014, Theorem 8, p. 378) gives, for infinitely many sizes `|Q|`, a complete
+deterministic automaton `B = (Q, {0, 1}, δ)` that is strongly connected, and a set `S ⊆ Q` that some word sends to a
+single state, such that a shortest word doing so has length `2^Ω(|Q|)`. Let `z` be a shortest one, let `δ(S, z) = {r}`
+and `S = {s_1, ..., s_m}`, and take the sources `A_i = (Q, {0, 1}, δ, s_i, {r})`. Every source accepts `z`, and a word
+every source accepts sends `S` to `r` and is no shorter than `z`, so `ℓ = |z|`. The sources have the same transitions
+and the same accepting state, so the token automaton can hold `Q` once in place of its `m` copies. Its states are then
+`q0`, `V_1, ..., V_(m+1)`, `U`, `D` and the states of `Q`, with `V_(i+1) -#-> s_i` for `i = 1, ..., m`, with
+`q -b-> δ(q, b)` for both letters `b`, and with `q -$-> D` for every `q ≠ r`. It accepts the words the automaton of the
+proof accepts over these sources, and the scan depends on the accepted words alone, a token being the longest accepted
+word that begins where it does. The three observations and the first part of this corollary therefore hold for it, and a
+shortest input refuting the crossed verdict of gap `m` has `|z| + m + 3` bytes. The automaton has
+`N = |Q| + m + 4 <= 2 |Q| + 4` states and the window `m + 2 <= N` bytes, so that length is `2^Ω(N)`. Every state is
+live. The states of `Q` are reached from `s_1`, those other than `r` lead to `D` on `$`, and `r` leads to one of them,
+`B` being strongly connected with more than one state. For the last claim, the machine of the membership proof of
+Theorem 12, asked for a set bit, has an accepting computation that repeats no configuration whenever it has one, and it
+reads one byte in each step. ∎
+
+For `m = 1, ..., 9` the lengths over the cycle sources are the entries of the shortest-window column of Table 2, reached
+here by a property of the scan where Theorem 6 concerns the model. Only the lengths are shared. The count
+`(m² + 3m + 8)/2` is of all the states of the automaton built here, while Table 2 counts the live states `n_m` of the
+automaton of Section 6.3, a different one. A counterexample that `crossing_counterexample()` returns is a shortest input
+of this kind, so no polynomial bounds its length either.
+
+The questions that Theorem 12 leaves aside are easier. Whether a window occurs, whether a token crosses a given gap at
+some occurrence, and whether at some occurrence the token containing the window's last byte begins elsewhere than at a
+proposed origin are each shown by an input that puts the window between two short words, taken from two lists that do
+not depend on the window. For a state `q` of the token automaton and a word `w` write `δ(q, w)` for the state that `w`
+leads to from `q`, and `δ(q, w) = ⊥` when the run is undefined, where `⊥` is not a state and does not accept, and
+`δ(⊥, w) = ⊥`. Let `n` be the number of states. A token *begins at gap `g`* of an occurrence at offset `t` when it
+begins at `t + g`.
+
+**Lemma 7 (short contexts).** For every state `q` that some nonempty word leads to from `q0`, fix a shortest such word
+`u_q`. For every state `p` and every `b` that is a state or `⊥`, fix a shortest nonempty word `v_(p,b)` such that
+`δ(p, v_(p,b))` accepts and `δ(b, v')` accepts for no nonempty prefix `v'` of `v_(p,b)`, when such a word exists. Let
+`𝒰` hold the empty word and the words `u_q`, each of at most `n` bytes, and let `𝒱` hold the empty word and the words
+`v_(p,b)`, each of at most `n²` bytes and those with `b = ⊥` of at most `n`. Let `W` be a window of `k` bytes, `g` a gap
+of it and `0 <= o < k`. If `W` occurs in a completely tokenizable input, then `u W v` is completely tokenizable for some
+`u ∈ 𝒰` and some `v` that is empty or one of the words `v_(p,⊥)`. If a token crosses gap `g` at some occurrence of `W`
+in a completely tokenizable input, then such `u` and `v` can be chosen so that a token crosses gap `g` at the occurrence
+at offset `|u|` in `u W v`. If at some such occurrence the token containing the last byte of `W` does not begin at gap
+`o`, then the same holds at the occurrence at offset `|u|` in `u W v` for some `u ∈ 𝒰` and `v ∈ 𝒱`.
+
+*Proof.* A word `u_q` has at most `n` bytes because a shortest word visits no state twice after its first byte. Along a
+word `v_(p,b)` the runs from `p` and from `b` are never in the same state, since they would stay together from there and
+accept together at its end. The word therefore leads `(p, b)` through pairs of a state and a different state or `⊥`, of
+which there are `n²`, and a shortest one visits no pair twice after its first byte, so it has at most `n²` bytes. For
+`b = ⊥` the second component stays `⊥`, which leaves `n` pairs. Let `x` be completely tokenizable with `W` at offset
+`t`, and keep of `x` the bytes from the start of the token containing the byte at `t` to the end of the token containing
+the byte at `t + k - 1`. The scan restarts in `q0` at every boundary, and a token that is the longest accepted word
+beginning where it does in `x` is the longest in the shorter input too, so the bytes kept, written `u W v`, are
+completely tokenizable with the tokens `T_0, ..., T_j` that `x` has there. The token `T_0` begins with `u` and contains
+the first byte of `W`, every later token begins at a gap of `W`, and `T_j` contains the last byte of `W` and ends with
+`v`. A gap below `k` is a boundary of this occurrence exactly when a token begins at it, and gap `k` exactly when `v` is
+empty.
+
+If `u` is not empty, replace it by `u_q` for `q = δ(q0, u)`. From the first byte of `W` on, the run of the first token
+passes the states it passed before, and `T_0` ended after that byte, so the scan commits a token ending where `T_0`
+ended and continues as before. Assume therefore that `u ∈ 𝒰`. If `v` is empty the input has the required form, so let
+`v` be nonempty. For each `i <= j` let `p_i` be the state that the run of `T_i` from its start is in after the last byte
+of `W`, or `⊥` when that run is undefined there, so that `p_j` is a state and `δ(p_j, v)` accepts. For the first two
+claims let `b = ⊥`. For the third, if a token `T_i` with `i < j` begins at gap `o`, let `b = p_i`. That token is the
+longest accepted word beginning at gap `o`, and it ends inside `W`, so `δ(b, v')` accepts for no nonempty prefix `v'` of
+`v`. In every other case let `b = ⊥`. The word `v_(p_j, b)` then exists, `v` being a word of its kind.
+
+Among the indices `i <= j` for which `v_(p_i, b)` exists, take those whose word is shortest and of them the least `i`,
+and write `h = v_(p_i, b)`. Scan `y = u W h`. Up to the last byte of `W` it holds the bytes of `u W v`, so for each
+`l < i` the accepted words from the start of `T_l` that end inside `W` are the same in both, and `T_l` is the longest of
+them. No accepted word from that start ends after `W` in `y`. Such a word would give a nonempty prefix `h'` of `h` with
+`δ(p_l, h')` accepting, and since the nonempty prefixes of `h'` are prefixes of `h`, the word `v_(p_l, b)` would exist
+with at most `|h'| <= |h|` bytes, against the choice of `i`. The scan therefore commits `T_0, ..., T_(i-1)` and reaches
+the start of `T_i`, whose run is in `p_i` after `W` and accepts at the end of `y`. Then `y` is completely tokenizable,
+and its last token begins where `T_i` does and contains the last byte of `W`. It contains `W` at offset `|u|`, and no
+token of it begins at a gap of that occurrence where no token of `u W v` began. A gap that was crossed is therefore
+crossed in it, gap `k` because `h` is not empty. For the third claim, the last token of `y` does not begin at gap `o`.
+When `i = j` this is the hypothesis, and when `i < j` a token `T_i` beginning at gap `o` would have `p_i = b`, while
+`δ(b, h)` does not accept and `δ(p_i, h)` does. For the first two claims `b = ⊥`, so `h` is one of the words `v_(p,⊥)`.
+∎
+
+**Theorem 13 (a given window).** Given a compiled token set and a window `W`, the following are NL-complete: whether `W`
+occurs in a completely tokenizable input; for a gap `g` of `W`, whether a token crosses `g` at some occurrence, and the
+verdict forced at `g`; and for an origin `o`, whether `(W, o)` is a certified split window in the sense of Definition 1,
+and whether it is a witnessed one. Each remains NL-hard when the token set has one token kind over two symbols and a
+start state that neither accepts nor is re-entered, and the window is a single byte. These reductions do not guarantee
+that every state is live. Over automata whose states are all live, the first three questions are decided in
+deterministic logarithmic space, and so are the two questions about a pair when the window has one byte, or two bytes
+over two symbols. The two questions about a pair remain NL-hard over such automata with three symbols and a window of
+two bytes, and with two symbols and a window of three bytes. Over a token automaton of `n` states and a window of `k`
+bytes, an occurrence of the window and a token crossing a given gap at an occurrence are each found in an input of at
+most `k + 2n` bytes, and an occurrence at which the token containing the window's last byte does not begin at a given
+origin in one of at most `k + n² + n` bytes, when some completely tokenizable input has one. The quadratic term has the
+right order. For all `r, s >= 1` there is a token set with one token kind over four symbols and `r + s + 3` states, all
+live, with a window of two bytes and an origin of it, such that a shortest input with an occurrence of that last kind
+has `r s + 2` bytes, which for every number `n >= 5` of states is `⌊(n - 3)² / 4⌋ + 2` at a suitable choice of `r` and
+`s`. Coded over three symbols the token set has `3 (r + s) + 3` states, all live, and a shortest such input of
+`2 + (2 r + 1) s` bytes, and coded over two symbols, with a window of three bytes, it has `6 (r + s) + 5` states, all
+live, and one of `3 + (4 r + 1) s` bytes. Over two symbols a window of two bytes needs only linearly many, some input
+with an occurrence of that kind having at most `2n + 1` bytes whenever one exists, and for every `n >= 2` some token set
+of `n` states over two symbols needs that many.
+
+*Proof.* *Membership.* Consider three questions about a completely tokenizable input: whether some has an occurrence of
+`W`, whether some has an occurrence at which a token crosses gap `g`, and whether some has an occurrence at which the
+token containing the last byte of `W` does not begin at gap `o`. The verdict forced is the complement of the second, the
+certified pair is the complement of the third, and the witnessed pair is the first together with the complement of the
+third. NL is closed under complement (Immerman, SIAM Journal on Computing 1988; Szelepcsényi, Acta Informatica 1988) and
+under intersection, so it suffices to place the three questions in NL. By Lemma 7 each, when it has the answer yes, has
+an input `u W v` showing it at offset `|u|` with `|u| <= n` and `|v| <= n²`, and with `|v| <= n` for the first two,
+which are the length bounds of the statement. Cut down as in the proof of the lemma, that input begins with the token
+containing the first byte of `W` and ends with the token containing the last.
+
+A nondeterministic machine guesses such an input without writing it down, holding a fixed number of states of the token
+automaton and of positions in `W` and a counter up to `n²`. It first chooses whether the first token begins at gap 0, in
+`q0`, or before the window, in which case it guesses a nonempty `u` of at most `n` bytes one byte at a time and keeps
+the state `δ(q0, u)`. It then follows the tokens through the window. Standing at the start of a token, at a gap `c` and
+in the state the token has there, it runs the automaton over `w_c ... w_(k-1)`, noting the last gap `e > c` at which the
+run is in an accepting state and the state `p` after `w_(k-1)` when the run gets that far. It may *advance* when `e`
+exists and `e < k`, taking the token to end at gap `e` and the next to begin there in `q0`. It may *select* the token
+when the run gets as far as `p`, taking it to contain the last byte of `W`. After selecting, it guesses `v`, which is
+empty, allowed when `p` accepts, or has at most `n²` bytes, read one at a time from `p` and ending in an accepting
+state. For the first question the machine then accepts. For the second it accepts when none of the tokens it followed
+began at gap `g` and, if `g = k`, when `v` is not empty. For the third it accepts when the selected token does not begin
+at gap `o` and, if an earlier token began there, when `δ(b, v')` accepts for no nonempty prefix `v'` of `v`, where
+`b = δ(q0, w_o ... w_(k-1))` is computed by one more pass over `W` and the condition is checked while `v` is guessed.
+The work tape holds `O(log n + log k)` bits.
+
+Suppose the machine accepts, and scan `u W v` for the words it guessed. A token it advanced over is the longest accepted
+word from its start that ends inside `W`. As in the proof of Lemma 7, either the scan commits those tokens and then the
+selected one to the end of the input, or the first of them that it does not commit extends to the end of `u W v'` for a
+nonempty prefix `v'` of `v`, and `u W v'` is completely tokenizable with its tokens beginning where the machine's tokens
+up to that one began. Either input contains `W`, and no token of it begins at a gap of the occurrence where the machine
+followed none. Gap `k` is crossed in the first input when `v` is not empty, and in the second, so the condition of the
+second question gives a crossing of gap `g`. Under the condition of the third, a token the machine followed from gap `o`
+has no accepted word that ends after `W`, so it cannot be the first token to extend past `W`, and the token containing
+the last byte of `W` begins where another of the machine's tokens began, and not at gap `o`. Conversely, the machine
+accepts an input `u W v` of the kind above by following its tokens. Each token before the last ends inside `W` at the
+last gap where its run accepts, which permits the advance, the run of the last gets past `W` and accepts after `v`, and
+the conditions hold because the tokens are those of the scan.
+
+*Hardness.* Reachability in a directed graph is NL-complete (Jones, Journal of Computer and System Sciences 1975). Let
+the graph have the vertices `1, ..., N`, and ask whether a path leads from `s` to `t`. The token DFA has the symbols `0`
+and `1` and one token kind. Its states are the root `q0`, a state `Z`, an end state `D`, which alone accepts, and a
+state `(v, j)` for every vertex `v` and every `j` from 0 to `N`. The root has `q0 -0-> Z` and `q0 -1-> D`, and
+`Z -0-> (s, 0)`. A state `(v, j)` has `(v, j) -0-> (v, j + 1)` when `j < N` and `(v, j) -1-> (j, 0)` when `j >= 1` and
+the graph has an edge from `v` to `j`, and `(t, 0) -1-> D`. There are no other transitions. The tokens are `1` and the
+words `00 y 1` for `y ∈ {0, 1}*` leading from `(s, 0)` to `(t, 0)`, and such a `y` exists exactly when a path leads from
+`s` to `t`, a path through the vertices `s, v_1, ..., v_r = t` giving `y = 0^(v_1) · 1 ... 0^(v_r) · 1` and each `1` of
+a word `y` following an edge. Let `W = 1`, which occurs, the input `1` being a token. For a word `y` of that kind the
+input `00 y 1` is one token, which crosses gap 0 of the occurrence at its end. Conversely a token that crosses gap 0 at
+an occurrence of `1` contains that byte and begins before it, so it is a word `00 y 1`. A token therefore crosses gap 0
+at some occurrence exactly when a path leads from `s` to `t`. Gap 0 is forced exactly when none does, and since the
+window has one byte and occurs, the pair `(W, 0)` is then certified and witnessed, and it is neither otherwise. The
+absence of a path is NL-complete too, NL being closed under complement, so the four questions are NL-hard. For
+occurrence, remove the transition `q0 -1-> D` and let `Z` accept as well. The tokens are then `0` and the words
+`00 y 1`, and `1` occurs in a completely tokenizable input exactly when a path leads from `s` to `t`. Both automata are
+written in logarithmic space, the root does not accept, and nothing enters it.
+
+*Live automata.* In these automata the states `(v, j)` from which `(t, 0)` is not reached are not live, and finding the
+live states is the reachability question. Suppose every state is live. The machine above then needs no guess for
+occurrence or for the crossing of a gap. The first token begins at gap 0 in `q0`, or before the window in a state that a
+nonempty word leads to from `q0`, which is any state that a transition enters, every state being reachable, and each of
+these cases is tried. The tokens it follows through the window are determined by the first, so each of them is tried as
+the selected one. A selected token in the state `p` after `W` has a completion, `p` being live, and it has a nonempty
+one exactly when a transition leaves `p`. A deterministic machine runs through these cases in logarithmic space and
+decides occurrence, the crossing of a gap and so the verdict forced. Origin refutation keeps its condition on `b`, and
+the two questions about a pair stay NL-hard. Take the symbols `0`, `1`, `a`, `c`, `e`, `#`, `!`, the root `q0`, the end
+state `D`, states `A`, `R`, `R'` and `E_1, ..., E_N`, and a state `(v, j)` for every vertex `v` and every `j` from 1 to
+`N`, with `(v, j) -0-> (v, j + 1)` when `j < N` and `(v, j) -1-> (j, 1)` when the graph has an edge from `v` to `j`. Let
+`q0 -a-> A` and `A -c-> R`, let `R` keep itself on `0` and `1`, and let `R -!-> D`, `R -#-> R'` and `R' -!-> D`. Let
+`q0 -c-> (s, 1)` and `(t, 1) -#-> D`, and let every `(v, j)` have `(v, j) -!-> D`. Let `q0 -e-> E_1`, `E_v -0-> E_(v+1)`
+for `v < N` and `E_v -1-> (v, 1)`. The accepting states are `A` and `D`. Every state is reached from the root, through
+`E_1, ..., E_N` for the states `(v, j)`, and every state other than `D` leads to `D`, so every state is live. Let
+`W = ac`, which occurs in the token `ac!`. The byte `a` is read from the root alone, so it begins a token, and `c` is
+read from `A` or from the root. At an occurrence of `W` the token containing `c` therefore begins at gap 0 or at gap 1.
+If it begins at gap 1, the scan has committed the single byte `a`, and the token is `c y !` or `c y #` for a word
+`y ∈ {0, 1}*`. The first is excluded, since `ac y !` is then an accepted word from the start of `a`, through `A`, `R`
+and `D`. In the second, `y` leads from `(s, 1)` to `(t, 1)`. Conversely, for such a `y` the input `ac y #` scans as `a`
+and `c y #`, the run from `a` ending in `R'` with no acceptance after `A`. The pair `(W, 0)` is therefore certified, and
+witnessed, exactly when no path leads from `s` to `t`.
+
+Fewer symbols suffice when each of the seven is written as a codeword and every state reads the codewords of its symbols
+through a trie of fresh states that do not accept, all of which are live. The codewords below form a prefix code, so the
+accepted words of the new automaton are the codings of the accepted words of the old, the completely tokenizable inputs
+are the codings of the completely tokenizable inputs, and the tokens of a coding are the codings of the tokens. Over
+three symbols write `a` as `2`, `c` as `1` and the other five symbols as the words `0 1^i 0` for `i = 0, ..., 4`. The
+byte `2` is then the codeword of `a` and nothing else, and a byte `1` after it begins a codeword, which is that of `c`.
+The window `21` therefore occurs in a coding only as the coding of an occurrence of `ac`, and the pair `(21, 0)` is
+certified, and witnessed, exactly when no path leads from `s` to `t`. Over two symbols write `a` as `1`, `c` as `01` and
+the other five as `00 1^i 00`, and take the window `101`. At an occurrence in the coding of a completely tokenizable
+input, its first byte is the codeword of `a`, the last byte of the codeword of `c`, or a byte of a word `00 1^i 00`. In
+the first case the bytes `01` after it begin a codeword, which is that of `c`. In the second they would begin a second
+`c`, and no `c` follows a `c` in a completely tokenizable input of the old automaton, since `c` leads to `R` or to
+`(s, 1)`, and neither accepts nor reads `c`. In the third the next bytes are `1` or `00`. In the coding of a completely
+tokenizable input the window therefore occurs only as the coding of an occurrence of `ac`, and the pair `(101, 0)` is
+certified, and witnessed, exactly when no path leads from `s` to `t`.
+
+Shorter windows are easier over live states. For a window of one byte the pair `(W, 0)` is certified exactly when gap 0
+is forced, and for a window `xy` of two bytes the pair `(xy, 1)` exactly when gap 1 is, so these are decided in
+deterministic logarithmic space, together with occurrence for the witnessed pair. Let the alphabet have two symbols, and
+consider `(xy, 0)`. It is not certified unless gap 0 is forced, so let gap 0 be forced. An accepted word is a completely
+tokenizable input of one token, so no accepted word contains `xy` after its first byte. An occurrence refutes the origin
+exactly when a token begins at its gap 1, the scan having committed the single byte `x` before it, and the input cut
+down to that byte and that token is still scanned as the two. If `x ≠ y`, the token begins with `y` and does not contain
+`xy`, so it is `v = y^h x^i` with `h >= 1`. Here `i = 0`. Otherwise the input `v v` would be scanned as `v` and `v`,
+since an accepted prefix of `v v` longer than `v` would contain `xy` after its first byte, and the occurrence of `xy`
+across the two tokens would then have its gap 0 inside the first of them. The token is thus `y^h`. Let `j >= 1` be least
+such that `y^j` is accepted, so that `j <= h`, and `j <= n` because every state that a word `y^l` with `l >= 1` leads to
+from `q0` is reached by one with `l <= n`. No word `x y^l` with `1 <= l <= h` is accepted, the scan having committed
+`x`, so the input `x y^j` is scanned as `x` and `y^j` as well. The origin is therefore refuted exactly when `δ(q0, x)`
+accepts, some word `y^j` with `j >= 1` is accepted, and for the least such `j` no word `x y^l` with `1 <= l <= j` is
+accepted. A deterministic machine checks this by following the runs from `q0` and from `δ(q0, x)` over at most `n` bytes
+`y`. If `x = y`, let `A = δ(q0, x)` and `R = δ(A, x)`. A refuting occurrence needs `A` to accept and `R` not to, the
+scan having committed `x` before a second `x`. Conversely, when `A` accepts and `R` does not, whether `R` is a state or
+undefined, the input `xx` itself is scanned as `x` and `x`. The pair `(xx, 0)` is therefore certified exactly when gap 0
+is forced and either `A` does not accept or `R` does. The cases `x ≠ y` and `x = y` do not use that every state is live,
+and they give part of the bound for a window `xy` of two bytes over two symbols, whether or not every state is live. An
+occurrence refutes the origin 1 exactly when a token contains `xy`. With its bytes before `x` replaced by a shortest
+word to the same state and its bytes after `y` by a shortest word to an accepting state, that token is an accepted word
+of at most `2n` bytes, and as an input it is one token. When gap 0 is forced and the origin 0 is refuted, the input
+`x y^j` above, or `xx`, refutes it with at most `n + 1` bytes. When gap 0 is not forced, a token crosses it at some
+occurrence, and the bytes of that token before `x` may be taken to be a word `u_q` of Lemma 7, of at most `n` bytes. If
+the token contains `y`, a shortest word to an accepting state in the place of its bytes after `y` leaves an accepted
+word of at most `2n + 1` bytes, one token that begins before `x`. If it ends with `x`, a token that begins with `y`
+follows it, so some accepted word begins with `y`, and a shortest such word `y v` has at most `n` bytes. The scan of
+`u_q x y v` commits `u_q x` and then `y v`, a token that begins at gap 1, unless a longer prefix of the input is
+accepted, and the longest accepted prefix is then an input of one token that contains `y` and begins before `x`. Each of
+these inputs refutes the origin 0 with at most `2n + 1` bytes. That many are needed. For two different bytes `x` and `y`
+and `n >= 2` let the states `0, ..., n - 1` lie on a cycle that reads `x y^(n-1)` from the root 0, and let the state 1
+alone accept. The tokens are the words `(x y^(n-1))^i x` with `i >= 0`, each beginning and ending with `x`, so in a
+completely tokenizable input a `y` lies in the token of the `x` before it. At an occurrence of `xy` that refutes the
+origin 0, the `x` is therefore not the first byte of its token, which has `x y^(n-1)` before that `x` and `y^(n-1) x`
+after it, and a shortest such input is the token `(x y^(n-1))² x` of `2n + 1` bytes.
+
+*The quadratic order.* For `r, s >= 1` take the symbols `x`, `y`, `a` and `b`, the root `q0`, states `A` and `D`, which
+accept, and states `P_0, ..., P_(s-1)` and `C_0, ..., C_(r-1)`, which do not. Let `q0 -x-> A`, `q0 -y-> P_0` and
+`A -y-> C_0`. Every `P_i` keeps itself on `a` and has `P_i -b-> P_(i+1)`, where `P_s` stands for `D`. Every `C_j` with
+`j < r - 1` has `C_j -a-> C_(j+1)` and `C_j -b-> D`, and the last has `C_(r-1) -a-> D` and `C_(r-1) -b-> C_0`. There are
+no other transitions, so every state is live, the root does not accept, and nothing enters it. Let `W = xy` with the
+origin 0. The byte `x` is read from the root alone and `y` from the root or from `A`, so at an occurrence the token
+containing `y` begins at gap 0 or at gap 1. Suppose it begins at gap 1. It is then `y v` for a word `v` that leads `P_0`
+to `D`, which holds the byte `b` exactly `s` times. The scan has committed the single byte `x`, so the run from that
+byte, which is in `C_0` after `y`, accepts after no nonempty prefix of `v`. From a state `C_j` with `j < r - 1` the next
+byte of `v` is therefore `a`, and from `C_(r-1)` it is `b`, which makes `v = (a^(r-1) b)^s`. Conversely the input
+`xy (a^(r-1) b)^s` is scanned as `x` and `y (a^(r-1) b)^s`. Every input with an occurrence that refutes the origin thus
+contains that word, which has `r s + 2` bytes, and its last `r s` bytes are the word `v_(P_0, C_0)` of Lemma 7. The
+automaton has `n = r + s + 3` states, so for every `n >= 5` the choice of `r = ⌊(n - 3) / 2⌋` and `s = ⌈(n - 3) / 2⌉`
+gives these lengths as `⌊(n - 3)² / 4⌋ + 2` and `⌊(n - 3)² / 4⌋`.
+
+The order survives the coding of the four symbols, each state reading the codewords of its symbols through a trie of
+fresh states as above, all of them live. Over three symbols write `x` as `2`, `y` as `1`, `a` as `00` and `b` as `010`,
+which adds two states under every `P_i` and every `C_j` and gives `3 (r + s) + 3` states. The byte `2` is the codeword
+of `x` and nothing else, and a byte `1` after it begins a codeword, which is that of `y`. The window `21` therefore
+occurs in a coding only as the coding of an occurrence of `xy`, and a shortest input refuting its origin 0 is the coding
+of `xy (a^(r-1) b)^s`, of `2 + (2 r + 1) s` bytes. Over two symbols write `x` as `1`, `y` as `01`, `a` as `0000` and `b`
+as `00100`, which adds one state under the root, one under `A` and five under every `P_i` and every `C_j` and gives
+`6 (r + s) + 5` states, and take the window `101`. At an occurrence in the coding of a completely tokenizable input, its
+first byte is the codeword of `x`, the last byte of the codeword of `y`, or the byte `1` of the codeword of `b`. In the
+first case the bytes `01` after it begin a codeword, which is that of `y`. In the second they would begin a second `y`,
+and no `y` follows a `y` in a completely tokenizable input, since `y` leads to `P_0` or to `C_0`, and neither accepts
+nor reads `y`. In the third the next bytes are `00`. The window therefore occurs there only as the coding of an
+occurrence of `xy`, and a shortest input refuting its origin 0 is the coding of the same word, of `3 + (4 r + 1) s`
+bytes. ∎
+
+The lists also decide the three questions directly, by scanning `u W v` for every `u ∈ 𝒰` and `v ∈ 𝒱`, at most `n + 1`
+words and at most `n² + 1`. The two halves of the open verdict thus differ. A crossing is found in nondeterministic
+logarithmic space, or deterministic over live states, and in a short input, while a boundary is PSPACE-complete to find
+and can need an input of exponential length. A boundary at a gap requires each earlier token of the occurrence to end
+where it does, which is a condition on the rest of the input, whereas a crossing, or an origin other than the proposed
+one, survives when an earlier token extends past the window.
+
+The lemma also bounds the question that has no window given, and that question is as hard as the model's.
+
+**Proposition 3 (existence).** Whether a compiled token set has a witnessed certified split window, in the sense of
+Definitions 1 and 2, is PSPACE-complete. It remains PSPACE-hard when the token set has one token kind over two symbols,
+a start state that neither accepts nor is re-entered, and every state live.
+
+*Proof.* *Membership.* By Lemma 7 a pair `(W, o)` is a witnessed certified split window exactly when `u W v` is
+completely tokenizable for some `u ∈ 𝒰` and `v ∈ 𝒱`, and in every completely tokenizable `u W v` with `u ∈ 𝒰` and
+`v ∈ 𝒱` the token containing the last byte of the occurrence at offset `|u|` begins at gap `o`. The first condition says
+that `W` occurs. The second follows from the certificate, and when it holds no occurrence refutes the origin, since by
+the lemma one at offset `|u|` in such an input would. The lists are computed in polynomial time and hold polynomially
+many words of polynomial length.
+
+A nondeterministic machine guesses `W` one byte at a time, marking one byte as the origin, and scans all the inputs
+`u W v` together, each through its `u`, then all of them through the guessed bytes, then each through its `v`. Maximal
+munch reads ahead, so each scan is told what it needs of the bytes it has not read. For a word `z` let `S(z)` be the set
+of states `q` such that `δ(q, z')` accepts for some nonempty prefix `z'` of `z`. The set of the empty word is empty, and
+for a byte `a` the set `S(a z)` holds the states `q` such that `δ(q, a)` accepts or lies in `S(z)`. For each input the
+machine guesses the set of the unread suffix before the first byte and after every byte, checks that equation as it
+reads the byte, and requires the empty set at the end, and by induction from the end only the true sets pass. With them
+the scan is deterministic. When bytes remain at a boundary, a token begins in `q0`, which must lie in the set of the
+unread suffix. After each byte the run is in a state `q`. It continues when `q` lies in the set of the unread suffix, a
+longer accepted word lying ahead. It commits the token when `q` accepts and does not lie in that set, the token being
+the longest accepted word from its start. Otherwise the scan fails, and the input is not completely tokenizable. For
+each input the machine keeps a state, a set, whether the scan has failed, and whether the last token to begin at a byte
+of `W` so far began at the marked byte, which is false while none has. That flag is frozen when `W` ends, and the
+equations of the sets go on being checked for a scan that has already failed, so that every failure is one of the true
+scan. It accepts when it has ended `W` with a byte marked, some scan has reached the end of its input without failing,
+and in every such scan the token containing the last byte of `W` began at the marked byte. This takes polynomial space,
+a computation that repeats no configuration is bounded by a step counter of polynomially many bits, and NPSPACE is
+PSPACE.
+
+*Hardness.* A partial automaton `B = (P, Σ, γ)` has a finite set `P` of states and a partial transition function `γ`,
+with no initial or accepting states. A word `w` has *rank one* in `B` when `γ(p, w)` is defined for some state `p` and
+is the same state wherever it is defined, and deciding whether a partial automaton has a word of rank one is
+PSPACE-complete (Ryzhikov, Theoretical Computer Science 2019, Theorem 1, p. 2). Given `B`, take as symbols its letters
+and one *marker* `m_p` for every state `p`, number them from 1 with the letters first, and write symbol number `i` as
+the codeword `1^i 0`. For a word `y` of symbols let `c(y)` be its coding and `π(y)` the word of its letters, the markers
+deleted. The token automaton over `0` and `1` has the root `q0`, the states of `P`, all of which accept, and under the
+root and under each state of `P` a chain of states that do not accept, which reads the bytes `1` of a codeword, the byte
+`0` then leading to the target of the symbol. From the root the codeword of `m_p` leads to `p`. From a state `p` the
+codeword of a letter `a` leads to `γ(p, a)` when that is defined, and the codeword of a marker `m_r` with `r ≠ p` leads
+back to `p`. Nothing else is defined, and each chain ends at the highest symbol that its state reads, so every state is
+live, the root does not accept, and nothing enters it. The automaton is written in polynomial time.
+
+Accepting states are entered only at the end of a codeword, so every token is the coding of a word of symbols, and so is
+every completely tokenizable input. A token begins with a marker `m_p` and enters `p`. In a state `p` the automaton
+reads the codeword of every symbol except `m_p` and the letters at which `γ(p, ·)` is undefined, a letter moving it as
+`γ` does and a marker leaving it in `p`. Every state of `P` accepts, so a token ends before the first codeword that the
+state `p` it has reached does not read, or at the end of the input. The scan goes on only if that codeword is one the
+root reads, which makes it `m_p`, and the next token then begins in `p` again. The state of `P` that the scan is in is
+thus moved by the letters alone. An input `c(m_p y)` is completely tokenizable exactly when `γ(p, π(y))` is defined, and
+a token begins at a marker of `y` exactly when it is the marker of the state reached by the letters before it.
+
+Let `w` have rank one, with `r` the state it leads to, and let `W = 0 c(w m_r)` with its origin at the first byte of
+`c(m_r)`. In a completely tokenizable input every `0` ends a codeword, so an occurrence of `W` begins at the last byte
+of a codeword and continues with the codewords of `w` and of `m_r`. The letters of `w` are read from the state `p` that
+the scan is in after that first codeword, so `γ(p, w)` is defined and is `r`, and a token begins at `m_r`, with which
+the window ends. The pair is therefore certified. It is witnessed, since for a state `p` at which `γ(p, w)` is defined
+the input `c(m_p w m_r)` is completely tokenizable and contains `W` from the last byte of `c(m_p)` on.
+
+Conversely let `(W, o)` be a witnessed certified split window, and take an occurrence of `W` in a completely tokenizable
+input. A token begins at gap `o` of it, so a codeword of a marker `m_r` begins there. Let `y` be the block of symbols of
+the input whose codewords hold a byte of the occurrence, and write `y = y_1 m_r y_2`, where this `m_r` is the marker
+that begins at gap `o`. The first and the last codeword of the block may lie only partly inside the occurrence. Let
+`v = π(y_1 y_2)`. For every state `p` at which `γ(p, v)` is defined, the input `c(m_p y_1 m_r y_2)` is completely
+tokenizable and contains `W` at the same place in `c(y_1 m_r y_2)`, with gap `o` at the first byte of `c(m_r)`. A token
+begins there by the certificate, so `γ(p, π(y_1)) = r` and `γ(p, v) = γ(r, π(y_2))`. The word `v` is defined at the
+state that the scan of the input at hand is in when it reads the first letter of `y_1 y_2`, or at every state when there
+is no letter, and it leads every state at which it is defined to one state, so it has rank one. A witnessed certified
+split window therefore exists exactly when `B` has a word of rank one. ∎
+
+The proposition concerns Definition 1 itself, where Theorem 5 concerns the model, and each is proved by its own
+reduction. Reading a window from the right bounds how long a shortest one can be.
+
+**Theorem 14 (shortest windows of the definition).** Let a token automaton have `n` states. If its token set has a
+certified split window, in the sense of Definition 1, then a shortest one has at most `(n + 1) · 7^n + 4^n + 1` bytes,
+and so has a shortest witnessed one, in the sense of Definition 2, when there is one. With the lower bound of Theorem
+15, both lengths are `2^Θ(n)` in the worst case.
+
+*Proof.* Removing the states that are not live changes no scan, since a run passes no accepting state after one of them,
+so `n` may be read as the number of live states when `q0` is live. Otherwise only the empty input is completely
+tokenizable, and every window of one byte is certified. Let `(W, o)` be a pair with `W` of `k` bytes, and let
+`b = δ(q0, w_o ... w_(k-1))`. By the proof of Theorem 13, `W` occurs in a completely tokenizable input exactly when the
+machine there has a run that selects a token and completes it, and `(W, o)` is certified exactly when no run of it
+accepts for the third question. The bounds on the lengths of the guessed `u` and `v` may be dropped, shortest words
+being within them. For a state `p` write `H(p)` when some word, possibly empty, leads `p` to an accepting state, and
+`G(p)` when some such word `v` has no nonempty prefix `v'` with `δ(b, v')` accepting, and let both be false of `⊥`. For
+a gap `c <= k` let `W_c = w_c ... w_(k-1)`. Standing at a gap `c < k` at a token that is in the state `q` there, the
+machine can select the token when `p = δ(q, W_c)` is a state. The completion it then needs exists exactly when `H(p)`
+holds, and one that meets the condition on `b` exactly when `G(p)` does. The machine can advance when some nonempty
+prefix of `W_c` leads `q` to an accepting state and the longest such prefix is shorter than `W_c`, and the next token
+then begins in `q0` at the gap `e` where that prefix ends.
+
+Three questions are asked of a token the machine stands at. *Occurrence* asks whether the machine can go on to select a
+token and complete it. *Refutation* asks whether it can go on to accept for the third question when no earlier token
+began at gap `o`, and *guarded refutation* asks the same when an earlier one did, so that the completion has to meet the
+condition on `b`. For a gap `c < k` let `O_c` be the answer to occurrence for a token that begins at `c`, and let `R_c`
+be its answer to refutation when `c <= o` and to guarded refutation when `c > o`. Let `O_k` and `R_k` be false, and
+write `D_c` for `R_c` when `c <= o` and for `O_c` when `c > o`. This `D_c` is the answer to refutation for a token that
+begins at any gap `c`, since to the right of `o`, when no earlier token began at `o`, no later one does either, and the
+machine then accepts for the third question exactly when it selects a token and completes it.
+
+A token is followed through the window as well. Let a token that began before a gap `c <= k` be in the state `q` at `c`,
+and let `p = δ(q, W_c)`. The machine can select it when `p` is a state. Let `e` be the last gap after `c`, gap `k`
+included, at which the run from `q` over `W_c` accepts, when there is one. If `e < k` the machine can advance from the
+token to `e`. If `e = k` it cannot advance, the longest accepted word of the run inside the window ending with the
+window's last byte, and the answers `O_k`, `R_k` and `D_k`, all false, stand for that. Only when there is no such gap
+can it advance to the last gap up to `c` at which the run of the token accepted after its start, and after gap 0 if it
+began before the window. In this last case the answer of a token that begins at that gap, to the question then asked of
+it, is the *fallback* of the token, which is false when there is no such gap either. For a truth value `x` let
+`F_c(q, x) = H(p) ∨ Ō`, `G_c(q, x) = G(p) ∨ R̄`, `A_c(q, x) = R̄`, `B_c(q, x) = H(p) ∨ D̄`, where `Ō`, `R̄` and `D̄` are
+`O_e`, `R_e` and `D_e` when the gap `e` exists, and all three are `x` when it does not. The map `A_c` is used for
+`c >= o`, `G_c` for `c > o` and `B_c` for `c <= o`. With `x` the fallback of the token, `F_c(q, x)` is its answer to
+occurrence. Its answer to guarded refutation is `G_c(q, x)` when it began to the right of `o`. Its answer to refutation
+is `A_c(q, x)` when it began at `o`, where it cannot be selected and every later token is guarded, and `B_c(q, x)` when
+it began to the left of `o`. A token that begins at a gap has no fallback, so `O_c = F_c(q0, false)` for every `c < k`,
+and `R_c` is `G_c(q0, false)` for `o < c < k`, `A_o(q0, false)` for `c = o` and `B_c(q0, false)` for `c < o`. Each of
+these values is defined from the answers at later gaps, so all of them are defined from the right.
+
+The maps of a gap are determined by those of the next. Let `1 <= c <= k`, let `a = w_(c-1)` and `r = δ(q, a)`, and let
+`Φ` be one of the four maps that is used at both gaps, with `y` standing for `O_c` when `Φ` is `F`, for `R_c` when it is
+`G` or `A`, and for `D_c` when it is `B`. Then `Φ_(c-1)(q, x) = x` when `r = ⊥`, `Φ_(c-1)(q, x) = Φ_c(r, x)` when `r` is
+a state that does not accept, and `Φ_(c-1)(q, x) = Φ_c(r, y)` when `r` accepts. In the first case the run from `q` over
+`W_(c-1)` is undefined after one byte, so `p = ⊥` and the run accepts nowhere. In the second it has the state `p` and
+the gap `e` of the run from `r` over `W_c`. In the third it has the same `p` and accepts at gap `c`, so its last
+accepting gap is that of the run from `r` when there is one and `c` otherwise, and the map of `r` gives both cases when
+`y`, the answer of a token that begins at `c`, is put in the place of the fallback. At gap `k` the maps are
+`F_k(q, x) = H(q) ∨ x`, `G_k(q, x) = G(q) ∨ x` and `A_k(q, x) = x`, and at gap `o` the map `B_o` is `F_o`, every later
+gap lying to the right of `o`.
+
+The first token of a run is at gap 0. It begins there, and its answers to occurrence and to refutation are `O_0` and
+`R_0`, or it began before the window and is in a state `q` that a nonempty word leads to from `q0`, and its answers are
+`F_0(q, false)` and `B_0(q, false)`, a token that began before the window having no fallback because the machine
+advances only to gaps after gap 0. So `W` occurs exactly when `O_0` or some such `F_0(q, false)` holds, and `(W, o)` is
+certified exactly when neither `R_0` nor any such `B_0(q, false)` does.
+
+The *label* of a gap `c` with `o < c < k` consists of the three maps `F_c(q, ·)`, `G_c(q, ·)` and `A_c(q, ·)` of every
+state `q`, together with `δ(q0, w_o ... w_(c-1))`, the state that the run from the origin is in at `c`, or `⊥`. The
+label of a gap `c < o` consists of the two maps `F_c(q, ·)` and `B_c(q, ·)` of every state `q`. Suppose two gaps
+`c < c'` have the same label, both of them between `o` and `k` or both to the left of `o`, and let `W'` be `W` without
+the bytes `w_c ... w_(c'-1)`, with its origin at the byte where `W` has it. The state `b` of `W'` is that of `W`.
+Between `o` and `k` this holds because the run from the origin is in the same state at `c` and at `c'`, or undefined at
+both, and to the left of `o` because the bytes from the origin on are unchanged. The maps of a gap depend only on the
+bytes after it, on `b`, and on where the origin lies among those bytes or that it lies to their left. In `W'` the gap
+before `W_(c')` therefore has the maps that gap `c'` has in `W`, which are those of gap `c`. The answers `O` and `R` of
+a gap other than `o` and `k` are values of its maps at `q0`, so the gaps to the left get the maps and the answers they
+have in `W`, one byte at a time. So `W'` occurs exactly when `W` does, and it is certified at its origin exactly when
+`W` is.
+
+A shortest certified split window therefore has different labels at the gaps between `o` and `k` and different labels at
+the gaps to the left of `o`, and so has a shortest witnessed one. Between `o` and `k` a state `q` has one of seven
+triples of maps. When the run from `q` over `W_c` accepts at no gap after `c`, the map `A_c(q, ·)` is the identity, and
+`F_c(q, ·)` and `G_c(q, ·)` are each the identity or constantly true, the second only if the first, since `G(p)` implies
+`H(p)`. When it accepts at one, the three maps are constant, and `A_c(q, ·)` implies `G_c(q, ·)`, which implies
+`F_c(q, ·)`, since `G(p)` implies `H(p)` and `R_e` implies `O_e`, a run that accepts for the third question having
+selected a token and completed it. Writing `ι` for the identity and 0 and 1 for the constant maps, that makes the
+triples `(ι, ι, ι)`, `(1, ι, ι)` and `(1, 1, ι)` of `F`, `G` and `A`, and `(0, 0, 0)`, `(1, 0, 0)`, `(1, 1, 0)` and
+`(1, 1, 1)`. With the `n + 1` values of the state of the run from the origin, there are at most `(n + 1) · 7^n` labels.
+To the left of `o` the two maps of a state are both the identity, or they are constant with the second implying the
+first, since `D_e` implies `O_e`. That makes the pairs `(ι, ι)`, `(0, 0)`, `(1, 0)` and `(1, 1)` of `F` and `B`, and at
+most `4^n` labels. Counting the gaps `o` and `k` as well, `k + 1 <= (n + 1) · 7^n + 4^n + 2`. ∎
+
+A certified split window that need not be witnessed is no easier to decide and no shorter in the worst case, although a
+token set has one as soon as some word occurs in none of its completely tokenizable inputs.
+
+**Theorem 15 (windows that need no witness).** Whether a compiled token set has a certified split window in the sense of
+Definition 1 is PSPACE-complete. It remains PSPACE-hard when the token set has one token kind over two symbols, a start
+state that neither accepts nor is re-entered, and every state live. For infinitely many `N` there is a token set of that
+kind with `N` states that has a witnessed certified split window and whose certified split windows, witnessed or not,
+all have `2^Ω(N)` bytes. With the upper bound of Theorem 14, the length of a shortest certified split window, witnessed
+or not, is `2^Θ(n)` in the worst case.
+
+The proof is in Appendix A. Its token sets code six symbols in blocks of three bits, and a window too short to hold a
+certain pattern occurs in completely tokenizable inputs at two offsets that differ by one, while tokens begin only at
+offsets divisible by three, so that no origin of it is a boundary at both.
 
 **Anchor propagation.** Section 2 noted that the weakest guarantee is already usable, a worker cutting at the known
 boundary and rescanning the window's suffix. Read as a window, that rescan forces further gaps. The statement needs a
@@ -1128,7 +1740,7 @@ contains an occurrence of `W` at the shifted offset. Second, the scan restarts i
 splitting companion's memorylessness lemma ([arXiv:2610.08854](https://arxiv.org/abs/2610.08854)), so from a boundary
 `p` of a completely tokenizable `x` it commits the longest token that is a prefix of `x[p ..)`.
 
-**Lemma 7 (anchor propagation).** Let the token set have maximum token length `L`, let `W` occur in some completely
+**Lemma 8 (anchor propagation).** Let the token set have maximum token length `L`, let `W` occur in some completely
 tokenizable input, and let gap `g` of `W` be forced. Define offsets `g = c_0 < c_1 < ... < c_m` by
 `c_(i+1) = c_i + |τ_i|` for as long as `c_i + L <= k`, where `τ_i` is the longest token that is a prefix of
 `W[c_i .. k)`. Then every `c_i` is a forced gap of `W`, and every gap strictly between `c_i` and `c_(i+1)` is crossed.
@@ -1140,7 +1752,7 @@ which is `W[c_i .. c_i + L)` when `c_i + L <= k`. The committed token is `τ_i`,
 tokenized, and it is the same at every occurrence. Its end `t + c_(i+1)` is a boundary and no boundary lies strictly
 inside it, so induction on `i` gives both claims. ∎
 
-**Corollary 7 (resolving width).** Let the token set have maximum token length `L`, let `x` be completely tokenizable,
+**Corollary 8 (resolving width).** Let the token set have maximum token length `L`, let `x` be completely tokenizable,
 and let `b` be a boundary of its tokenization with `b + L <= |x|`. Let `a < b` be a boundary that some window `W_a` of
 width `h_a` forces: `W_a` occurs at `q`, and `a = q + g_a` for a forced gap `g_a`. Then the window `x[q .. e)` with
 `e = max(b + L, q + h_a)` forces `b` at its gap `b - q`. A window of width at most `(b - a) + h_a + L` therefore forces
@@ -1149,7 +1761,7 @@ width `h_a` forces: `W_a` occurs at `q`, and `a = q + g_a` for a forced gap `g_a
 *Proof.* The window contains `W_a` at offset 0, so its gap `g_a` is forced by monotonicity, and it occurs in `x`. Let
 `a = p_0 < p_1 < ... < p_m = b` be the boundaries of `x` from `a` to `b`. Each is the end of the token the scan commits
 at the one before, and each `p_i` with `i < m` satisfies `p_i + L < b + L <= e`. In the window's offsets these are the
-`c_i` of Lemma 7, each with `c_i + L <= e - q`, so `c_m = b - q` is forced. The width is
+`c_i` of Lemma 8, each with `c_i + L <= e - q`, so `c_m = b - q` is forced. The width is
 `e - q = max((b - a) + g_a + L, h_a) <= (b - a) + h_a + L`. ∎
 
 In words, a boundary that lies `d` bytes past an anchor forced by a window of width `h`, and at least `L` bytes before
@@ -1164,17 +1776,17 @@ describe.
 forced. The *reach* `R_H(x)` is the length of the longest interval of `x` between consecutive anchors, with 0 and `|x|`
 counting as anchors, which we call its longest *anchor spacing*. The *all-width reach* `R_∞(x)` admits every finite
 width, and the *floor* `F(x)` is the length of the longest token of the tokenization of `x`. The reach is a distance on
-one input, while the splitting companion's anchor-free stretch ([arXiv:2610.08854](https://arxiv.org/abs/2610.08854))
-counts the positions of the longest run carrying no anchor from a fixed inventory of certificates, a supremum over all
-completely tokenizable inputs. With the same anchors on one input, an interval `[a, b)` holds `b - a` positions,
-unanchored but for `a`, so a distance `d` is a run of `d - 1`, or of `d` from 0 when position 0 carries none, and over
-`{a}` the input `aa` has reach 1 and no unanchored position. Then `R_H(x) >= R_∞(x) >= F(x)`. The first inequality holds
-because a wider budget adds anchors and removes none, and the second because every anchor is a boundary, so none lies
-strictly inside the longest token, and some interval contains that token whole. The floor is shared by every method that
-cuts only at boundaries; below it only a cut inside a token, resumed from scanner state, can go. Two facts locate the
-middle term.
+one input, while the splitting companion's anchor-free span ([arXiv:2610.08854](https://arxiv.org/abs/2610.08854)) is
+the supremum, over all completely tokenizable inputs, of the lengths of their runs of positions carrying no anchor from
+a fixed finite inventory of certificates. With the same anchors on one input, an interval `[a, b)` holds `b - a`
+positions, unanchored but for `a`, so a distance `d` is a run of `d - 1`, or of `d` from 0 when position 0 carries none,
+and over `{a}` the input `aa` has reach 1 and no unanchored position. Then `R_H(x) >= R_∞(x) >= F(x)`. The first
+inequality holds because a wider budget adds anchors and removes none, and the second because every anchor is a
+boundary, so none lies strictly inside the longest token, and some interval contains that token whole. The floor is
+shared by every method that cuts only at boundaries; below it only a cut inside a token, resumed from scanner state, can
+go. Two facts locate the middle term.
 
-(a) With a maximum token length `L`, Corollary 7 makes every boundary `b` past an anchor `a`, with `b + L <= |x|`, an
+(a) With a maximum token length `L`, Corollary 8 makes every boundary `b` past an anchor `a`, with `b + L <= |x|`, an
 anchor at some finite width, so past its first anchor and up to `L` bytes before its end, the all-width intervals of
 such an input are single tokens. The interval before the first anchor need not be one. Over `{a, aa, bbb}` the input
 `aaaaabbba` has boundaries 0, 2, 4, 5, 8, 9 and the all-width anchors 5 and 8 alone, since a longer run of `a` may
@@ -1198,7 +1810,7 @@ newline. The block-comment rows hold it between `/*` and `*/`, which the family 
 bare row has neither strings nor comments, so the family says nothing there.
 
 In the terms of constrained coding, read the token set as a tagged graph, the splitting companion's armed-run automaton
-with each edge labeled by its byte and tagged by its boundary bit. A uniform radius `r` is the tagged analogue of the
+with each edge labeled by its byte and tagged by its boundary bit. A uniform radius `r` is the tagged analog of the
 `(m, a)`-sliding-block decodability of Marcus, Roth and Siegel (lecture notes 2001, Section 4.3), defined there for
 tagged encoders, which the armed-run automaton is not. In that definition any two paths `e_(-m) ... e_0 ... e_a` that
 generate the same word agree on the tag of `e_0`, and the radius maps to `(m, a) = (r, r - 1)` when `e_0` is the byte
@@ -1275,7 +1887,7 @@ and split-friendly rows by width 128, and on block comments 7 of 40 by 128 and a
 the search found on a C-like row reaches back to within a byte of the interval's left anchor, or past it, 40 of 40 on
 the conventional row over distances of 5 to 95 bytes, 40 of 40 on split-friendly over 5 to 96, and 40 of 40 on block
 comments over 1 to 912. A boundary 95 bytes past its anchor resolves with a guided window of 106 bytes, and one 912
-bytes past with 933. These resolving windows resemble propagation from an anchor in Corollary 7, which proves it only
+bytes past with 933. These resolving windows resemble propagation from an anchor in Corollary 8, which proves it only
 for a token set with a maximum token length, a hypothesis the C-like rows do not meet. Inside the conventional row's
 searched intervals the longest goes 104, 101, 91, 82, 44 and 16 bytes at widths 4 to 128, and inside the block-comment
 row's it goes from 965 to 857 at 128 and to 127 at 1,024. In these C-like samples, the windows that brought the longest
@@ -1307,9 +1919,11 @@ exactly. Of the 337 that certify no byte, **326 gain a certified window under th
 witnessed**. For each of the 322, the bounded search finds a completely tokenizable input containing a certified window,
 with the covering token beginning at the returned origin, and each input is verified as it is constructed, with the 322
 aggregate asserted. Another 4 model-positive grammars have no occurrence within the bounded witness search and are
-counted as unresolved, never as rescues, and the remaining 11 exhaust the quotient with no window under the model; none
-are inconclusive. Occurrence is a property of the concrete word and is not determined by its quotient key, so the
-witness search continues past the shortest certified length instead of stopping at the first certifying word.
+counted as unresolved, never as rescues, and the remaining 11 exhaust the quotient with no window under the model. No
+model search reaches its threshold of 200,000 retained keys, so none is inconclusive in the sense of Section 5, and
+those 4 grammars are the only ones the bounded witness search leaves undecided. Occurrence is a property of the concrete
+word and is not determined by its quotient key, so the witness search continues past the shortest certified length
+instead of stopping at the first certifying word.
 
 Separate rewind-stress rows exercised 1,079,392 generated executions that scanned through the window and contained at
 least one rewind, with zero disagreements against the shipped scanner; 418,466 of those executions tokenize their whole
@@ -1325,18 +1939,6 @@ bound, and beside the gate's six-status keys it gives the keys of the three-stat
 chosen-origin search of Section 6. Those come from the figure program `paper/figures/window_search.cpp`, added after
 release v1.3.3, which runs both over the same token sets, asserts that their shortest lengths equal the gate's on every
 row, and pins the counts.
-
-The example windows show the recovery anchors. The string and line-comment rows resynchronize at a newline followed by a
-byte that must begin a token, and the block-comment rows at the byte pair `*/` followed by whitespace, in comment
-context the closer, with the origin immediately after the pair. The certificate is occurrence-universal, so it also
-covers occurrences where `*/` reads as two operator tokens; the pinned witnesses exercise that reading. The conventional
-row certifies at length two because its whitespace runs include the newline, so `!` must begin a token there as well.
-The JSON row uses the RFC 8259 lexical forms (Bray, RFC Editor 2017) over bytes and assumes UTF-8 validity; it is not a
-conforming JSON processor. Section 11 measures the anchor density supplied by certified windows, in an exploratory
-campaign the artifact does not assert, and under hopper's JSON lexer those of width at most 4 name 94.64 anchors per KiB
-of `twitter.json`. The run `a⁺` is included as the negative row, and `a*` would be decided as the same automaton, in
-which every byte continues a run as readily as it begins one. The model certifies no window, since absent-byte windows
-certify only vacuously under Definition 1, and the search exhausts its quotient, which is the shape of a model-negative.
 
 **Table 4.** Certified windows for the named token sets, from the gate's asserted rows and the figure program's: the
 shortest model-certified length, one example window with its origin, and the quotient keys the search retained before
@@ -1355,6 +1957,18 @@ cumulative one is new to this study, and every other positive row is an exact-em
 | C-like, cumulative (new here)  |                            4 | `\n*/\t` at 3            |                       189 |                         102 |                  79 |
 | JSON, RFC 8259                 |                            2 | `\t"` at 1               |                        69 |                          52 |                  29 |
 | `a⁺` (negative row)            |                         none | search exhausted         |                         3 |                           2 |                   2 |
+
+The example windows show the recovery anchors. The string and line-comment rows resynchronize at a newline followed by a
+byte that must begin a token, and the block-comment rows at the byte pair `*/` followed by whitespace, in comment
+context the closer, with the origin immediately after the pair. The certificate is occurrence-universal, so it also
+covers occurrences where `*/` reads as two operator tokens. The pinned witnesses exercise that reading. The conventional
+row certifies at length two because its whitespace runs include the newline, so `!` must begin a token there as well.
+The JSON row uses the RFC 8259 lexical forms (Bray, RFC Editor 2017) over bytes and assumes UTF-8 validity; it is not a
+conforming JSON processor. Section 11 measures the anchor density supplied by certified windows, in an exploratory
+campaign the artifact does not assert, and under hopper's JSON lexer those of width at most 4 name 94.64 anchors per KiB
+of `twitter.json`. The run `a⁺` is included as the negative row, and `a*` would be decided as the same automaton, in
+which every byte continues a run as readily as it begins one. The model certifies no window, since absent-byte windows
+certify only vacuously under Definition 1, and the search exhausts its quotient, which is the shape of a model-negative.
 
 ## 13 Related work
 
@@ -1378,23 +1992,23 @@ Lester's boxing check anticipates the flavor at a known join. Every lexer state 
 must either already emit a token, making the following character irrelevant to that string's lexing, or emit the same
 token immediately on every character that may begin the second, so the join is a lexeme boundary and concatenation
 preserves token boundaries. The check is stated compactly in the position paper and in full in the journal treatment
-(Lester, PLAS 2013; Lester, Ong and Schäfer, Journal of Computer Security 2016); it judges one join of two analyzed
+(Lester, PLAS 2013; Lester, Ong and Schäfer, Journal of Computer Security 2016). It judges one join of two analyzed
 fragments at a time, and it neither certifies every occurrence of a grammar-derived word nor recovers a covering origin.
 
 Recent LLM-tokenizer work addresses input-specific seams instead. LoPT validates position-aligned tokenizations of
 overlapping chunks and adjusts chunk length where needed (Shao, Zheng, Wang, Zheng, Li and Fan, ACL 2026), and for BPE,
 recent work bounds the streaming delay of ordered merge rules from a known beginning (Mamouras, Li and Yang, PLDI 2026)
-or maintains the tokenization incrementally over every prefix (Jiang and Gong, ICML 2026); Hayase, Liu, Smith, and Oh
+or maintains the tokenization incrementally over every prefix (Jiang and Gong, ICML 2026). Hayase, Liu, Smith, and Oh
 enumerate, for a byte prefix of BPE-tokenized text, the tokenizations whose last token straddles the prefix end, a valid
 covering tree over one concrete input (ICML 2026). The certificate here is grammar-derived and occurrence-universal,
 where that work is input-relative and enumerative, and the certificate fixes one origin for every occurrence. The
 parsing side of that pipeline is active again. Cyclic operator precedence grammars (Chiari, Mandrioli and Pradella,
 Information and Computation 2025) admit parallel-suitable chunking of flat unbounded terminal-string substructures, with
-precedence relations defined between adjacent terminals; in a conventional pipeline those terminals are lexer output, so
+precedence relations defined between adjacent terminals. In a conventional pipeline those terminals are lexer output, so
 that application presupposes tokenization, though the formalism is not restricted to pre-tokenized input.
 
 A classical antecedent of window-determines-state is the definite automaton, studied in depth by Perles, Rabin, and
-Shamir (IEEE Transactions on Electronic Computers 1963); its operational form for a fixed `k` is `k`-locality, in which
+Shamir (IEEE Transactions on Electronic Computers 1963). Its operational form for a fixed `k` is `k`-locality, in which
 any `k` consecutive symbols force a unique state, every word of length `k` being synchronizing (Holub and Štekr, CIAA
 2009). Both quantify uniformly over all windows and speak of states; the certificate here is per-window, speaks of token
 boundaries under maximal munch, and recovers an origin. Raw-state synchronization alone does not identify the start of
@@ -1403,7 +2017,7 @@ the covering maximal-munch token.
 The classical special case of boundary recovery is code synchronization, and Proposition 1 states the relation exactly
 for prefix codes, where left-to-right tokenization realizes the code factorization. Over a prefix code the certified
 windows that occur are the synchronizing splits whose right half sits inside one codeword, and a synchronizing pair
-(Berstel, Perrin and Reutenauer, Cambridge University Press 2010) with a nonempty right component yields, on its
+(Berstel, Perrin and Reutenauer, Cambridge University Press 2010, p. 375) with a nonempty right component yields, on its
 concatenation, a certified window whose origin is the start of the right component's last codeword. The pair notion is
 older than the book. Lassez defines a pair of words of `X*` as synchronizing when every occurrence of it in a word of
 `X*` forces a factorization cut between its halves, and proves that whether a regular code has a bounded synchronization
@@ -1414,7 +2028,7 @@ Definition 2 and Lemma 2(4)). An early member of that family is the comma-free c
 (Canadian Journal of Mathematics 1958), a block code no codeword of which occurs across the boundary of two adjacent
 codewords, so that every codeword is a certified window with origin 0 for the code's own factorization. Finite
 synchronization delay (Restivo, Theoretical Computer Science 1975) bounds how many codewords a synchronizing pair needs,
-hence a byte bound for a finite code; the resumption argument, in which an occurrence of `ww` in a coded message, for a
+hence a byte bound for a finite code. The resumption argument, in which an occurrence of `ww` in a coded message, for a
 synchronizing word `w`, lets decoding resume independently from the position after the first `w`, survives into the
 partial-DFA treatment (Berlinkov, Ferens, Ryzhikov and Szykuła, DMTCS 2026). The explicit modern bounded-window form of
 that special case is the synchronizing morphism, for which a window of bounded length suffices to detect boundaries
@@ -1479,7 +2093,7 @@ Marcus, IEEE Transactions on Information Theory 1985), an occurrence-universal l
 state, which Adler, Coppersmith and Hassner define in their Definition 3.3 and use as a means of resetting an encoding
 automaton in sliding-block code construction (Adler, Coppersmith and Hassner, IEEE Transactions on Information Theory
 1983, Definition 3.3). A certified window shares that shape, reading the window as the observable block and the covering
-token's start as the hidden coordinate; the classical theory, however, is stated for factor maps of subshifts, without
+token's start as the hidden coordinate. The classical theory, however, is stated for factor maps of subshifts, without
 token priorities, maximal munch, backup, or any tokenization semantics, and it neither defines nor decides the lexical
 instantiation.
 
@@ -1501,24 +2115,33 @@ We claim no novelty for the decidability of the exact certificate of a proposed 
 finite-state transduction (Karttunen, ACL 1996), so the property is regular and a proposed window is decided by standard
 closure, and what this paper supplies is the conservative model, its soundness, the finite quotient that makes the
 search terminate and the specializations, together with the smaller searches, the complexity of the model's existence
-problem, the factorization semantics of the cloud, explicit constructions for the witnessed and global-completeness
-questions, and the boundary profile's cut results. We are likewise not aware of an implementation that derives certified
-windows from a compiled maximal-munch token set and checks them against a running scanner, other than the instruments
-this paper describes and their supported successor in release 1.4.0. For a subword vocabulary, Gigatoken derives
-two-symbol cuts before selected punctuation from a SentencePiece vocabulary and checks the chunked output against its
-own serial encoding in its tests (Rød, Gigatoken, 2026).
+problem and of the verdicts and the certificate of a given window, the factorization semantics of the cloud, explicit
+constructions for the witnessed and global-completeness questions, and the boundary profile's cut results. We are
+likewise not aware of an implementation that derives certified windows from a compiled maximal-munch token set and
+checks them against a running scanner, other than the instruments this paper describes and their supported successor in
+release 1.4.0. For a subword vocabulary, Gigatoken derives two-symbol cuts before selected punctuation from a
+SentencePiece vocabulary and checks the chunked output against its own serial encoding in its tests (Rød, Gigatoken,
+2026).
 
 ## 14 Limitations
 
 All deliberate. The soundness proof speaks only of completely tokenizable inputs, so malformed input is outside the
-proof, and no consumed-prefix analogue is claimed. Negatives are model-relative. The model refuses windows a greedy
+proof, and no consumed-prefix analog is claimed. Negatives are model-relative. The model refuses windows a greedy
 scanner would allow, so an exhausted search means no window *under this model*, never that none exists. The worst case
 is exponential, and Section 6.3 shows that no polynomial algorithm for the model's existence question exists unless P =
-PSPACE, with shortest windows themselves of length `2^Ω(√n)` on a family of token sets. The probe and the shipped search
-are budgeted, though the retained keys stayed below 200 on every named row, at most 32 with mean 9.9 among the 337
-no-byte grammars. The complexity results concern the model and the compiled automaton; the complexity of Definition 1
-itself, and bounds in the size of a regular expression, are not claimed. The decision of global completeness has an
-EXPSPACE upper bound and no matching lower bound, and the exact witnessed synthesis was not run over the random sweep.
+PSPACE, and Section 6.4 that shortest windows themselves have length `2^Ω(n)` on a family of token sets. The probe and
+the shipped search are budgeted, though the retained keys stayed below 200 on every named row, at most 32 with mean 9.9
+among the 337 no-byte grammars. The complexity results concern the compiled automaton, and bounds in the size of a
+regular expression are not claimed. Those of Section 6.3 concern the model. For the property the model approximates,
+Theorem 12 proves two questions about a given window PSPACE-complete, whether a given gap is a boundary at some
+occurrence and whether it is open, and Theorem 13 proves five more NL-complete, whether the window occurs, whether a
+token crosses a given gap at some occurrence, the verdict forced, Definition 1 for a given pair, and the same for a
+witnessed pair. Its hardness for the first three uses states that are not live, and over an automaton whose states are
+all live those three are decided in deterministic logarithmic space. Whether a token set has a witnessed certified split
+window at all is PSPACE-complete by Proposition 3, and a shortest one has `2^Θ(n)` bytes in the worst case by Theorems
+14 and 15, where the exponential lengths of Theorem 6 are those of model certificates. Theorem 15 proves both for a
+certified split window that need not be witnessed. The decision of global completeness has an EXPSPACE upper bound and
+no matching lower bound, and the exact witnessed synthesis was not run over the random sweep.
 
 The evaluated v1.3.3 artifact ships no window-planning API, and its probe excludes the nullable sets, so the sweep of
 Section 12 is reproduced at the later commit named there; its certificate machinery is a probe, on the principle that
@@ -1546,7 +2169,7 @@ with its origin or a proof that the model admits none at any length. Two smaller
 three-status quotient and an unambiguous automaton that follows one chosen origin, the latter shipped as
 `shortest_split_window()` by release 2.2.0 of munch. Existence of a model certificate is PSPACE-complete, plain or
 witnessed, so no polynomial-time algorithm decides it unless P = PSPACE, and separately a shortest window can be
-`2^Ω(√n)` bytes long over `n` states. The cloud's hypotheses are exactly the histories of arbitrary token factorizations
+`2^Ω(n)` bytes long over `n` states. The cloud's hypotheses are exactly the histories of arbitrary token factorizations
 of words of `X*`, the concatenations of tokens, which is why the vacuous window is certified, why token kinds do not
 matter to the search, why the model is exact on the polynomially decidable class where every factorization is the
 scan's, and how a shortest witnessed window and the model's global completeness are decided.
@@ -1561,29 +2184,120 @@ inside one codeword, and the named token sets studied here are not codes. A toke
 empty string is decided through its positive-width equivalent, which unrolls the accepting start state and changes no
 scan, so nothing is set aside on that account.
 
-Of the 337 random token sets certifying no byte, 322 gain a witnessed certified window with zero inconclusive searches,
-and the predecessor's six exact-empty rows all gain witnessed windows of two to four bytes, with the concrete windows in
-Table 4. Separate rewind-stress rows exercised 1,079,392 generated executions that scanned through the window and
-contained at least one rewind, with zero disagreements against the shipped scanner, and the figures are printed and
-asserted in the artifact, so they fail the test suite if they move. By choice, this paper stops short of the cut itself,
-whose construction requires explicit composition with the predecessor's prefix-stability result. A controlled evaluation
-on representative corpora, with planning times, occurrence frequencies and end-to-end comparisons against byte
-certificates, is the natural next step.
+Of the 337 random token sets certifying no byte, 322 gain a witnessed certified window and four more a model certificate
+for which the bounded search finds no occurrence, with no model search reaching its threshold, and the predecessor's six
+exact-empty rows all gain witnessed windows of two to four bytes, with the concrete windows in Table 4. Separate
+rewind-stress rows exercised 1,079,392 generated executions that scanned through the window and contained at least one
+rewind, with zero disagreements against the shipped scanner, and the figures are printed and asserted in the artifact,
+so they fail the test suite if they move. By choice, this paper stops short of the cut itself, whose construction
+requires explicit composition with the predecessor's prefix-stability result. A controlled evaluation on representative
+corpora, with planning times, occurrence frequencies and end-to-end comparisons against byte certificates, is the
+natural next step.
 
-Read gap by gap, the certificate is one pattern of a window's boundary profile, one forced gap followed by crossed gaps
-to the window's end. A rule that cuts at a window's gap and reconciles nothing is sound exactly at forced gaps, so the
-profile is the whole anchor supply a window of its width can give such a rule. Over a token set with a maximum token
-length `L` a forced gap propagates, the scan from it forcing every boundary it commits with its lookahead inside the
-window, so a boundary lying after an anchor and at least `L` bytes before the end of the input resolves at a width of at
-most its distance from the last preceding anchor plus that anchor's window width and `L`. No single width decides every
-gap of the JSON row, or of the C-like rows with strings or comments, since no bounded window sees whether an unmatched
-quote or an open comment lies to its left. At the campaign width the profile adds anchors on JSON and the byte-pair
-vocabularies, none on the C-like rows, and shortens no longest anchor spacing, whose floor is the longest token.
+Read gap by gap, a certificate at origin `o` is one pattern of the boundary profile of a window of `k` bytes, gap `o`
+forced and the gaps `o + 1, ..., k - 1` crossed. A rule that cuts at a window's gap and reconciles nothing is sound
+exactly at forced gaps, so the profile is the whole anchor supply a window of its width can give such a rule. Whether a
+given gap is a boundary at some occurrence is PSPACE-complete to decide, and so is whether it is open, while occurrence,
+the verdict forced and the certificate of a given pair are NL-complete, with an occurrence, a crossing and an occurrence
+refuting an origin each found in an input of polynomial length when one exists, where a shortest input refuting a
+crossed verdict can need `2^Ω(n)` bytes over `n` states. Whether a token set has a certified split window at all is
+PSPACE-complete, witnessed or not, and a shortest one has `2^Θ(n)` bytes in the worst case, for Definition 1 as for the
+model. Over a token set with a maximum token length `L` a forced gap propagates, the scan from it forcing every boundary
+it commits with its lookahead inside the window, so a boundary lying after an anchor and at least `L` bytes before the
+end of the input resolves at a width of at most its distance from the last preceding anchor plus that anchor's window
+width and `L`. No single width decides every gap of the JSON row, or of the C-like rows with strings or comments, since
+no bounded window sees whether an unmatched quote or an open comment lies to its left. At the campaign width the profile
+adds anchors on JSON and the byte-pair vocabularies, none on the C-like rows, and shortens no longest anchor spacing,
+whose floor is the longest token.
 
 Like its predecessor, this paper contributes the certification step and no new way to recover context. It extends that
 step from single bytes to bounded windows, with the origin recovered and the conservatism exhibited. Certified windows
 synchronize token-origin information in an enriched cloud model, and need not synchronize the token DFA itself; the
 predecessor's one-way reset-word connection applies at length one, and no general implication extends to longer windows.
+
+## A Proof of Theorem 15
+
+*A token set from a set of states.* Let `B = (Q, {a, b}, δ_B)` be a strongly connected complete deterministic automaton
+with at least two states, let `S` be a set of `m >= 1` states `s_1, ..., s_m` of it, and let `f` be a state. The token
+automaton has the symbols `H`, `t`, `j`, `a`, `b` and `E`, and `Γ` stands for the five other than `H`. Its states are
+the root `q0`, states `h_0, ..., h_m` and `g`, states `c_1, ..., c_m`, the states of `Q`, an end state `T` and a state
+`Z`, of which `h_0`, `c_1`, `T` and `Z` accept. The root has `q0 -H-> h_0` and `q0 -t-> c_1` and leads to `T` on `j`,
+`a` and `b`. A state `h_i` with `i < m` has `h_i -t-> h_(i+1)`, the last has `h_m -j-> g`, and `g` keeps itself on `a`
+and `b`. Every other symbol of `Γ` leads these states to `Z`, except that `g` does not read `E`. A state `c_i` has
+`c_i -j-> s_i`, and `c_i -t-> c_(i+1)` when `i < m`. The states of `Q` read `a` and `b` as in `B`, each of them but `f`
+leads to `Z` on `E`, and `Z` keeps itself on every symbol of `Γ`. There are no other transitions. The automaton has
+`|Q| + 2m + 5` states, its root does not accept, and nothing enters the root. Every state is reached from the root. From
+every state of `Q` a state other than `f` is reached, which reads `E`, the states `c_i` lead into `Q`, and the states
+`h_i` and `g` lead to `Z`, so every state is live.
+
+Call a word *bad* when it is `H t^m j w E` for a word `w` of letters `a` and `b` with `δ_B(S, w) = {f}`. A word over the
+six symbols occurs in a completely tokenizable input exactly when it has no bad factor. To see this, note that `H` is
+read from the root alone, so every `H` of a completely tokenizable input begins a token and no token reaches past the
+next `H`. Call a *segment* an `H` with the bytes `y ∈ Γ*` up to the next `H` or the end of the input. The scan from the
+`H` of a segment is the scan of the input `H y`. From `h_0` the run over `y` follows the form `t^m j w E` through the
+states `h_i` and `g` without accepting, enters `Z` at the first byte that departs from the form, and is undefined at an
+`E` that completes it. If `y` departs from the form before completing it, the run enters `Z` and the segment is one
+token. If `y` is a proper prefix of a word of the form, the scan commits `H` and then every byte of `y` singly, since a
+token that begins with `t` and has more bytes contains `E`, and `j`, `a` and `b` lead the root to `T`, which reads
+nothing. In the remaining case `y = t^m j w E v`, and the scan commits `H`. When it then stands at a `t` with `i` bytes
+`t` from there to the `j`, the run from the root is in `s_i` after the `j` and in `δ_B(s_i, w)` before the `E`. If that
+state is not `f`, the run enters `Z` and the rest of the segment is one token. If it is `f`, the run has accepted after
+its first byte only, and the scan commits that `t`. The scan comes to these bytes `t` in turn, `i` running from `m` down
+to 1 for as long as it commits them singly, and after the last it commits `j` and the letters of `w` singly and fails at
+the `E`, which begins no token. A segment thus fails to be completely tokenizable exactly when it begins with such a
+word in which `δ_B(s_i, w) = f` for every `i`, which is a bad word. In a completely tokenizable input the `H` of a bad
+factor would begin a segment that begins with the factor, so there is none. Conversely, for a word `x` without a bad
+factor the input `HE x` is completely tokenizable. Its first segment departs from the form at `E`, as `m >= 1`, and each
+of the others begins at an `H` of `x` and with no bad word.
+
+When no word sends `S` to `{f}`, no word is bad and every word occurs, and `L` stands for `∞`. Otherwise let `z` be a
+shortest word with `δ_B(S, z) = {f}`, let `d = |z|` and `L = m + d + 3`. The word `X = H t^m j z E` is bad and has `L`
+symbols, and no bad word is shorter, so `X` does not occur and every word of fewer than `L` symbols does.
+
+*Three bits for a symbol.* Write `H` as `000`, `t` as `101`, `j` as `010`, `a` as `011`, `b` as `110`, and `E` as any of
+`111`, `001` and `100`, so that every block of three bits is a code of exactly one symbol. In the token automaton over
+`0` and `1`, whose bytes are called bits here, every state reads the blocks of its symbols through a trie of at most six
+fresh states that do not accept, all of them live. It has `N <= 7 (|Q| + 2m + 5)` states, all live, and one token kind,
+its root does not accept, and nothing enters the root. Its accepted words are the words of whole blocks that decode to
+accepted words. An input is therefore completely tokenizable exactly when it consists of whole blocks and decodes to a
+completely tokenizable input, and its tokens begin at offsets divisible by three.
+
+Let `W` be a word of `k <= 3L - 4` bits. Let `ρ` be 0 or 1, and put `ρ` bits before `W` and at most two after it to make
+whole blocks, which are at most `L - 1`, since `ρ + k <= 3L - 3`. They decode to a word `x` that occurs, so the input of
+the blocks `000` and `111` followed by these, which decodes to `HE x`, is completely tokenizable and contains `W` at
+offset `6 + ρ`. For an origin `o` of `W` the offsets `6 + o` and `7 + o` are not both divisible by three, so at one of
+the two occurrences no token begins at gap `o`, and `(W, o)` is not certified. A certified split window therefore has at
+least `3L - 3` bits, and there is none when no word sends `S` to `{f}`.
+
+Suppose now that `z` exists. Let `K` be the coding of `X` with `E` written `111`, of `3L` bits, and let
+`Y = 1 K 1 K 1 000`, of `6L + 6` bits, with its origin `o` at the first of its last three bits. Let `Y` occur at offset
+`t` in a completely tokenizable input. The copies of `K` begin at the offsets `t + 1` and `t + 3L + 2`. If `t + 1` were
+divisible by three, the first copy would consist of whole blocks of the input, which decode to `X`, and if `t + 2` were,
+the second would. Since `X` does not occur, `t` is divisible by three, the last three bits of `Y` are a block, the code
+of `H`, and a token begins at it. The pair `(Y, o)` is therefore certified. It is witnessed as well. In `K` the block
+`000` comes first and is followed by `101`, as `m >= 1`, and no other block of `K` begins or ends with `00`, so three
+bits `0` in a row begin in `Y` only at the offsets 1 and `3L + 2`, where the copies of `K` begin, and at `o`. Cut into
+blocks from its first bit, `Y` thus decodes to a word whose only `H` is its last symbol, which has no bad factor, and
+the blocks `000` and `111` followed by `Y` are a completely tokenizable input.
+
+*The two claims.* For the length, take the automata `B` and sets `S` that the proof of Vorel's theorem (AFL 2014,
+Theorem 8, p. 378) builds, one for every power of two `ℓ >= 2`, with `|Q| = 288 ℓ + 48 log_2 ℓ + 168` and a shortest
+word sending `S` to one state of at least `2^ℓ` letters, and let `f` be the state that a shortest such word sends `S`
+to. Then `d >= 2^ℓ` and `N <= M(ℓ) = 7 (3 |Q| + 5)`, where `M(ℓ) = Θ(ℓ)`. The token set has the witnessed certified
+split window `(Y, o)`, and its certified split windows all have at least `3L - 3 > 2^ℓ` bits, which is `2^Ω(N)`. For
+every sufficiently large `n` the largest power of two `ℓ` with `M(ℓ) <= n` has `n < M(2 ℓ) < 2 M(ℓ)`, so `ℓ = Ω(n)` and
+the bound holds over token sets with at most `n` states as well. With this `ℓ`, the token set built from `B` and `S` in
+the proof of Theorem 6 has `|Q| + 2m + 6 <= M(ℓ) <= n` states, all live, and its shortest model-certified windows, plain
+or witnessed, have `m + d + 3 > 2^ℓ` bytes, so the model's lower bound holds over at most `n` live states too. For the
+hardness, whether some word sends a given set of states of a strongly connected complete automaton over two letters to
+one state is PSPACE-complete (Vorel, AFL 2014, Theorem 11, p. 379). An instance with one state, or with an empty set, is
+decided at once. For any other let `f` be any state. A word that sends `S` to one state can be continued to `f`, the
+automaton being strongly connected, so some word sends `S` to one state exactly when some word sends it to `{f}`, and by
+the last two paragraphs exactly when the token set over two symbols has a certified split window. That token set is
+written in polynomial time. For membership, by Lemma 7 a pair `(W, o)` is a certified split window exactly when in every
+completely tokenizable `u W v` with `u ∈ 𝒰` and `v ∈ 𝒱`, for the lists of the lemma, the token containing the last byte
+of the occurrence at offset `|u|` begins at gap `o`. The machine in the proof of Proposition 3 decides whether some pair
+is one when it no longer requires a scan that reaches the end of its input without failing, in the same space.
 
 ## References
 
@@ -1678,3 +2392,11 @@ predecessor's one-way reset-word connection applies at length one, and no genera
   Press, 987-1030, 2021; cited from arXiv:1006.1265v3.
 - M.-P. Béal, J. Senellart. *On the Bound of the Synchronization Delay of a Local Automaton.* Theoretical Computer
   Science 205(1-2):297-306, 1998.
+- V. Vorel. *Subset Synchronization of Transitive Automata.* AFL 2014, EPTCS 151, 370-381.
+- A. Ryzhikov. *On Automata Recognizing Birecurrent Sets.* Theoretical Computer Science 753:76-79, 2019; cited from
+  arXiv:1711.01061v2.
+- N. D. Jones. *Space-Bounded Reducibility among Combinatorial Problems.* Journal of Computer and System Sciences
+  11(1):68-85, 1975.
+- N. Immerman. *Nondeterministic Space is Closed under Complementation.* SIAM Journal on Computing 17(5):935-938, 1988.
+- R. Szelepcsényi. *The Method of Forced Enumeration for Nondeterministic Automata.* Acta Informatica 26(3):279-284,
+  1988.
