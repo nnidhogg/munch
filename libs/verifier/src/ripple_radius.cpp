@@ -584,17 +584,18 @@ struct Best
 }
 
 /**
- * @brief Follows the run on the spelling of two canonical tokens together by their traces, as the trace lemma of the
- *        report The Left Ripple of Byte-Pair Encoding does, until a merge crosses the join of the two or the run ends.
+ * @brief Follows the run on the spelling of two canonical tokens together by their traces, until a merge crosses the
+ *        join of the two or the run ends.
  *
- * While no merge has crossed the join, the merges inside each token are, by the projection lemma, the beginning of the
- * run on that token alone, so the run stands at one place in each trace. Its next merge is the lowest-ranked of three:
- * the next merge of the left trace, the merge of the left token's last token with the right token's first, and the next
- * merge of the right trace. A rank names one merge, so equal ranks are one merge at two places, and the run takes the
- * leftmost: the left trace before the join and the join before the right trace. A merge across the join is never
- * undone, so the run ends in the two tokens exactly when both traces end with no merge joining them. Each step moves on
- * in a trace or stops, at most |u| + |v| - 1 steps for tokens u and v, each with one lookup of the merges' ranks, and
- * nothing here assumes the merges' order.
+ * While no merge has crossed the join, the merges inside each token are, by the projection lemma of the report The Left
+ * Ripple of Byte-Pair Encoding (arXiv:2611.13061v1, Lemma 8), the beginning of the run on that token alone, so the run
+ * stands at one place in each trace. Its next merge is the lowest-ranked of three: the next merge of the left trace,
+ * the merge of the left token's last token with the right token's first, and the next merge of the right trace. A rank
+ * names one merge, so equal ranks are one merge at two places, and the run takes the leftmost: the left trace before
+ * the join and the join before the right trace. A merge across the join is never undone, so the run ends in the two
+ * tokens exactly when both traces end with no merge joining them. Each step moves on in a trace or stops, at most
+ * |u| + |v| - 1 steps for tokens u and v, each with one lookup of the merges' ranks, and nothing here assumes the
+ * merges' order.
  * @param left The trace of the left token.
  * @param right The trace of the right token.
  * @param ranks The rank of each merge to apply, by its two parts.

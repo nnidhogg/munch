@@ -240,16 +240,16 @@ struct Uniform_radii
  * windows ending at the byte from the narrowest to the budget, then the uniform window. A window is certified at the
  * start its last byte has in the window's own encoding when miscovering() on the automaton finds no miscovering there,
  * the only origin that can be certified, since the window occurs in itself. A certified window's cut is a boundary of
- * the input's encoding, and by the canonical adjacency theorem of the report The Left Ripple of Byte-Pair Encoding the
- * bytes on either side of a boundary are encoded alone as the whole input encodes them, so a worker reads to its cut
- * and a window may begin anywhere in the input. The uniform window is the pinned-byte theorem's: with R the origin
- * radius and Q_s the right start radius, or ceilings on them, the window of width R + Q_s + 1 whose byte R is the byte
- * walked pins that byte at the start it has in the window's own encoding, which places a cut within L - 1 bytes before
- * the byte, L the longest token; it is encoded and never decided, and it exists at every byte from R to the input's
- * size less Q_s + 1, so with the radii each cut lies within L - 1 bytes past its floor once the floor is at least R and
- * the input runs Q_s + L bytes past it. The radii are the caller's: ripple_radius() decides R, rule_ceilings() computes
- * Q_s and both ceilings, and with an infinite radius the table has no uniform window and the certified windows that
- * occur are its cuts.
+ * the input's encoding, and by the canonical adjacency theorem of the report The Left Ripple of Byte-Pair Encoding
+ * (arXiv:2611.13061) the bytes on either side of a boundary are encoded alone as the whole input encodes them, so a
+ * worker reads to its cut and a window may begin anywhere in the input. The uniform window is the pinned-byte
+ * theorem's: with R the origin radius and Q_s the right start radius, or ceilings on them, the window of width
+ * R + Q_s + 1 whose byte R is the byte walked pins that byte at the start it has in the window's own encoding, which
+ * places a cut within L - 1 bytes before the byte, L the longest token; it is encoded and never decided, and it exists
+ * at every byte from R to the input's size less Q_s + 1, so with the radii each cut lies within L - 1 bytes past its
+ * floor once the floor is at least R and the input runs Q_s + L bytes past it. The radii are the caller's:
+ * ripple_radius() decides R, rule_ceilings() computes Q_s and both ceilings, and with an infinite radius the table has
+ * no uniform window and the certified windows that occur are its cuts.
  * @param automaton The token automaton of a byte table, as token_automaton(merges) builds it, its symbols the bytes.
  * @param input The input.
  * @param request The chunks aimed for, the budget and the supplied cuts.

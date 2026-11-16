@@ -123,11 +123,12 @@ inline constexpr std::size_t window_density_budget{1U << 16U};
  * none applies. A window W is certified at an origin o when at every occurrence of W in every string the token covering
  * its last byte begins o bytes into it, miscovering()'s certificate; a set of windows is dense when finitely many
  * strings contain none of them, and its density bound N is one more than the longest such string. The decision is
- * Proposition 'The last byte' of the report The Left Ripple of Byte-Pair Encoding. With an infinite origin radius R, as
- * ripple_radius() decides it, the certified windows of no width are dense, by its Theorem 'Density', since a certified
- * window has a cut; the effective self-pair is the reason. With R finite, a window of width h > R + 1 certified at o
- * has its suffix of width R + 1 certified at o - (h - R - 1), so the certified windows of any width are dense exactly
- * when those of width at most R + 1 are, with the same avoiding strings and so the same N.
+ * Proposition 'The last byte' of the report The Left Ripple of Byte-Pair Encoding (arXiv:2611.13061). With an infinite
+ * origin radius R, as ripple_radius() decides it, the certified windows of no width are dense, by its Theorem
+ * 'Density', since a certified window has a cut; the effective self-pair is the reason. With R finite, a window of
+ * width h > R + 1 certified at o has its suffix of width R + 1 certified at o - (h - R - 1), so the certified windows
+ * of any width are dense exactly when those of width at most R + 1 are, with the same avoiding strings and so the same
+ * N.
  *
  * Those are decided by a graph: the strings of R bytes that contain no certified window, each with an edge on a byte c
  * to the string of its last R - 1 bytes and c when no suffix of the R + 1 bytes is a certified window. An avoiding

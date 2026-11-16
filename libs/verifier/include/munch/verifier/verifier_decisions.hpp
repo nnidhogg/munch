@@ -521,11 +521,12 @@ struct Smallest_fanout
  * a position p whose covering token begins elsewhere once a byte is appended to x, every window of width R + Q_s + 1
  * pins its byte R: an appended string moves no token start below |x| - Q_s, by induction on its bytes, and a prepended
  * one changes no covering token at a position of at least R. That is the pinned-byte theorem of the report The Left
- * Ripple of Byte-Pair Encoding, over the window certificate of the report Finitely Verifiable Segmentation, which this
- * decides at any byte. Both searches run over miscovering()'s product of the verifier with the window's matching
- * progress and the marks of the last |window| bytes, at an occurrence reading the token covering the byte from those
- * marks, the first raising its flag at any occurrence and the second where the token begins elsewhere than the offset,
- * so each has at most |Q| (|window| + 1) 2^(|window| + 1) keys, the flag counted, Q the verifier's states.
+ * Ripple of Byte-Pair Encoding (arXiv:2611.13061), over the window certificate of the report Finitely Verifiable
+ * Segmentation, which this decides at any byte. Both searches run over miscovering()'s product of the verifier with the
+ * window's matching progress and the marks of the last |window| bytes, at an occurrence reading the token covering the
+ * byte from those marks, the first raising its flag at any occurrence and the second where the token begins elsewhere
+ * than the offset, so each has at most |Q| (|window| + 1) 2^(|window| + 1) keys, the flag counted, Q the verifier's
+ * states.
  * @param verifier The verifier.
  * @param window The window, nonempty.
  * @param byte The byte asked, an index of the window.

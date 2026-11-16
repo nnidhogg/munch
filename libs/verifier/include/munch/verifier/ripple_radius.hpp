@@ -197,9 +197,9 @@ enum class Overlap_graph : std::size_t
  * bytes and the inputs attaining the two can differ. With every character the table names at least p and at most q
  * bytes long, the character radius r and this radius R satisfy p r <= R <= q r; over characters of one length k, R is k
  * times r, and a mirrored constant m > 0 counted in characters is k (m - 1) + 1 in bytes. The report The Left Ripple of
- * Byte-Pair Encoding counts symbols, which are characters here, so a figure it gives for a table of characters longer
- * than a byte counts characters where this returns bytes. Over the characters U+0000 to U+007F, in order, it returns
- * what the byte overload returns on the same table, to the byte.
+ * Byte-Pair Encoding (arXiv:2611.13061) counts symbols, which are characters here, so a figure it gives for a table of
+ * characters longer than a byte counts characters where this returns bytes. Over the characters U+0000 to U+007F, in
+ * order, it returns what the byte overload returns on the same table, to the byte.
  * @param merges The admissible merge table in rank order, each part a character or the product of an earlier merge.
  * @param alphabet The alphabet, UTF-8 text whose characters are the tokens before any merge, each once.
  * @param graph The part of the overlap graph explored, the live graph unless the stopped one is asked for.

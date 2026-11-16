@@ -386,10 +386,11 @@ shortest window of each of their 25 conditions has 1 to 4 bytes over 3 to 159 li
 one, the block-comment grammars' first at width 4. The enumeration costs the byte classes to the power of the width, so
 it answers for the short windows a planner tries, and a grammar whose shortest window is longer is answered by
 `shortest_split_window()`. Byte-pair encoding has a bound of another kind, the pinned-byte theorem of the report *The
-Left Ripple of Byte-Pair Encoding*: under a table of finite origin radius R and right start radius Q_s every window of
-width R + Q_s + 1 has a boundary at one offset at every occurrence, a bound for every window rather than for some, and
-for the weaker guarantee `boundary_profile()` decides rather than the covering origin the certified windows row counts.
-It has no counterpart here, since a run of letters as long as one likes is one token and pins no byte.
+Left Ripple of Byte-Pair Encoding* ([arXiv:2611.13061](https://arxiv.org/abs/2611.13061)): under a table of finite
+origin radius R and right start radius Q_s every window of width R + Q_s + 1 has a boundary at one offset at every
+occurrence, a bound for every window rather than for some, and for the weaker guarantee `boundary_profile()` decides
+rather than the covering origin the certified windows row counts. It has no counterpart here, since a run of letters as
+long as one likes is one token and pins no byte.
 
 ## An External Grammar: JSON.g4
 

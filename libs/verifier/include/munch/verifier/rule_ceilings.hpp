@@ -82,9 +82,9 @@ struct Rule_ceilings
  * |x| - p over the bytes p of x whose covering token begins elsewhere in the encoding of xb; their suprema are the
  * right span radius Q_span and the right start radius Q_start, both finite for every table. With the origin radius R of
  * ripple_radius(), every window of width R + Q_start + 1 pins its byte R at the start that byte has in the window's own
- * encoding, which is the pinned-byte theorem of the report The Left Ripple of Byte-Pair Encoding, so these are the
- * radii a planner cutting at that theorem's windows needs, and a ceiling serves it in place of a radius, since a window
- * of width R' + q' + 1 with R' >= R and q' >= Q_start pins its byte R' by the same theorem.
+ * encoding, which is the pinned-byte theorem of the report The Left Ripple of Byte-Pair Encoding (arXiv:2611.13061), so
+ * these are the radii a planner cutting at that theorem's windows needs, and a ceiling serves it in place of a radius,
+ * since a window of width R' + q' + 1 with R' >= R and q' >= Q_start pins its byte R' by the same theorem.
  *
  * The ceilings are the report's Proposition 'Bounds in the rules'. With S the lengths of every merge's left part
  * summed, Q_start <= max(0, S - 1), which the chain table (a_(m-1), a_m), (a_(m-2), a_(m-1)), ..., (a_0, a_1) over

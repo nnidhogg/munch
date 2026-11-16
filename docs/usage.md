@@ -611,8 +611,9 @@ window at that offset, and a cut at offset a pins byte a, so the windows that pi
 boundary at one offset at every occurrence are one window language. The byte asked need not be the last: over the merges
 (a, b) and (a, ab) no origin certifies the last byte of a run of a's, which ends in a token a alone and in aab before a
 b, while every window of four bytes pins its byte 2, as the pinned-byte theorem of the report *The Left Ripple of
-Byte-Pair Encoding* says of every window of width R + Q_s + 1 under a table of finite origin radius R and right start
-radius Q_s.
+Byte-Pair Encoding* ([arXiv:2611.13061](https://arxiv.org/abs/2611.13061), mirrored by
+[docs/bpe_left_ripple.md](bpe_left_ripple.md)) says of every window of width R + Q_s + 1 under a table of finite origin
+radius R and right start radius Q_s.
 
 `dependence(verifier, window, origin)` asks a second question of a pair the verifier certifies, and refuses one it does
 not: the certificate makes the cut at the origin a boundary of the whole string's segmentation, and independence says
@@ -853,15 +854,16 @@ verifier::boundary_gap(tower);          // 6, the bytes of the longest token ▁
 `verifier::token_automaton(merges)` of `munch/verifier/token_automaton.hpp` builds the token automaton of canonical
 byte-pair encoding over a merge table, and `verifier::miscovering(automaton, window, origin)` decides on it the same
 window certificate under the same encoder as `miscovering()` on `merge_tower(merges)`, without building the tower. It
-rests on the canonical adjacency theorem, Theorem 2 of the report *The Left Ripple of Byte-Pair Encoding*: a list of
-tokens is the encoder's segmentation of its spelling exactly when every token is the segmentation of its own spelling
-and so is every adjacent pair. A run of consecutive tokens of a segmentation is then the segmentation of its own
-spelling, so a miscovering, when there is one, is spelled by the tokens over one occurrence of the window with nothing
-on either side, and it is at most 2L + |window| - 2 bytes long, L the longest token. The decision searches those runs: a
-token holding the whole window anywhere but at its start when the origin is zero, or a first token whose tail spells the
-start of the window, then tokens inside the window, then a last token that contains the window's final byte and begins
-anywhere but at the origin. Which token may follow which is read off the token automaton of Berglund, Martens and van
-der Merwe (Theoretical Computer Science 2026, by Theorem 1, Corollary 2 and Algorithm 2 of its preprint
+rests on the canonical adjacency theorem, Theorem 2 of the report *The Left Ripple of Byte-Pair Encoding*
+([arXiv:2611.13061](https://arxiv.org/abs/2611.13061), mirrored by [docs/bpe_left_ripple.md](bpe_left_ripple.md)): a
+list of tokens is the encoder's segmentation of its spelling exactly when every token is the segmentation of its own
+spelling and so is every adjacent pair. A run of consecutive tokens of a segmentation is then the segmentation of its
+own spelling, so a miscovering, when there is one, is spelled by the tokens over one occurrence of the window with
+nothing on either side, and it is at most 2L + |window| - 2 bytes long, L the longest token. The decision searches those
+runs: a token holding the whole window, unless it holds it at its start and the origin is zero, or a first token whose
+tail spells the start of the window, then tokens inside the window, then a last token that contains the window's final
+byte and begins anywhere but at the origin. Which token may follow which is read off the token automaton of Berglund,
+Martens and van der Merwe (Theoretical Computer Science 2026, by Theorem 1, Corollary 2 and Algorithm 2 of its preprint
 arXiv:2405.07671v2), in which a token enters the same state wherever it is read, so a node of the search is that state
 with the number of the window's bytes spelled so far, each node is expanded once, and the search stops at the first
 miscovering. The automaton has one base state plus one per merge whose product can be read, and on a large table
@@ -1055,10 +1057,11 @@ prepended character by its UTF-8 bytes. The radius counted in characters is fini
 not this one divided by a length, since this one weighs each character by its bytes and the inputs attaining the two can
 differ: with every character the table names p to q bytes long, the radius in characters r and the radius in bytes R
 satisfy p r <= R <= q r, and over characters of one length k, R is k times r. The report *The Left Ripple of Byte-Pair
-Encoding* counts symbols, which are characters here, so a figure it gives for a table of characters longer than a byte
-counts characters, not bytes. Over the characters U+0000 to U+007F the decision is `ripple_radius(merges)`'s, to the
-byte, and a character the alphabet holds twice is refused with `std::invalid_argument` naming it, as is a merge that
-names a character outside the alphabet:
+Encoding* ([arXiv:2611.13061](https://arxiv.org/abs/2611.13061), mirrored by
+[docs/bpe_left_ripple.md](bpe_left_ripple.md)) counts symbols, which are characters here, so a figure it gives for a
+table of characters longer than a byte counts characters, not bytes. Over the characters U+0000 to U+007F the decision
+is `ripple_radius(merges)`'s, to the byte, and a character the alphabet holds twice is refused with
+`std::invalid_argument` naming it, as is a merge that names a character outside the alphabet:
 
 ```cpp
 const std::vector<verifier::Merge> merges{{.left = "é", .right = "t"}, {.left = "▁", .right = "ét"}};
@@ -1077,7 +1080,8 @@ appended byte is the furthest from the input's end that a token of its encoding 
 the right start ripple the furthest that a byte's covering token changes its start; their suprema are the right span
 radius and the right start radius Q_s, finite for every table. With the origin radius R, every window of width
 R + Q_s + 1 pins its byte R at the start that byte has in the window's own encoding, the pinned-byte theorem of the
-report *The Left Ripple of Byte-Pair Encoding*, so a planner cutting at those windows needs R and Q_s, or ceilings on
+report *The Left Ripple of Byte-Pair Encoding* ([arXiv:2611.13061](https://arxiv.org/abs/2611.13061), mirrored by
+[docs/bpe_left_ripple.md](bpe_left_ripple.md)), so a planner cutting at those windows needs R and Q_s, or ceilings on
 them, a wider window pinning its byte by the same theorem. The ceilings are the report's Proposition 'Bounds in the
 rules': Q_s is at most max(0, S - 1) for S the lengths of the merges' left parts summed, which the chain of merges
 (c, d), (b, c), (a, b) attains; a finite R is at most the lengths of the useful merges' right parts summed, under the

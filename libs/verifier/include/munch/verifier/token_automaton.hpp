@@ -263,13 +263,13 @@ private:
  *
  * For a projective encoder the canonical adjacency theorem holds: a list of tokens is the encoder's segmentation of its
  * spelling exactly when every token is in V and every adjacent pair in E. It is Theorem 2 of the report The Left Ripple
- * of Byte-Pair Encoding for canonical byte-pair encoding, and Theorem 1 of Appendix B of Vieira et al. (Language Models
- * over Canonical Byte-Pair Encodings, ICML 2025, arXiv:2506.07956v1) for byte-pair encoding over a merge list whose
- * every token is canonical; the report's proof uses of the encoder only that a merge never restores a boundary and its
- * projection lemma, which is the projective property, so it holds for the class unchanged. miscovering() rests on the
- * theorem alone, so on this automaton it decides a window certificate under the encoder from V and E, with no table and
- * the same bound, over the strings a chain of the tokens spells, every string over the encoder's symbols when V holds
- * them all.
+ * of Byte-Pair Encoding (arXiv:2611.13061) for canonical byte-pair encoding, and Theorem 1 of Appendix B of Vieira et
+ * al. (Language Models over Canonical Byte-Pair Encodings, ICML 2025, arXiv:2506.07956v1) for byte-pair encoding over a
+ * merge list whose every token is canonical; the report's proof uses of the encoder only that a merge never restores a
+ * boundary and its projection lemma, which is the projective property, so it holds for the class unchanged.
+ * miscovering() rests on the theorem alone, so on this automaton it decides a window certificate under the encoder from
+ * V and E, with no table and the same bound, over the strings a chain of the tokens spells, every string over the
+ * encoder's symbols when V holds them all.
  *
  * The state of a token stores the tokens that may not follow it, ascending, so the automaton holds |V| + 1 states and
  * |V|^2 - |E| stored tokens, and an adjacency test is a binary search among them.
@@ -288,15 +288,15 @@ private:
  *        occurrence in every string over the automaton's alphabet under the encoder's segmentation of it.
  *
  * The verdict is miscovering()'s on the merge tower of the same table and alphabet, decided without building the tower.
- * It rests on the canonical adjacency theorem, Theorem 2 of the report The Left Ripple of Byte-Pair Encoding: a list of
- * tokens is the encoder's segmentation of its spelling exactly when every token is the segmentation of its own spelling
- * and so is every adjacent pair. A run of consecutive tokens of a segmentation is then the segmentation of its own
- * spelling, so a miscovering, when there is one, is spelled by the tokens over one occurrence of the window, from the
- * token containing its first byte to the token containing its last, and is at most 2L + |window| - 2 bytes long, L the
- * longest token. Adjacency is read off the automaton, the state a token entered deciding which tokens may follow it. On
- * the automaton of an adjacency relation the certificate is decided by the same search under the encoder whose relation
- * it is, over the strings its chains spell, since token_automaton() over a relation assumes a projective encoder, for
- * which the theorem holds.
+ * It rests on the canonical adjacency theorem, Theorem 2 of the report The Left Ripple of Byte-Pair Encoding
+ * (arXiv:2611.13061): a list of tokens is the encoder's segmentation of its spelling exactly when every token is the
+ * segmentation of its own spelling and so is every adjacent pair. A run of consecutive tokens of a segmentation is then
+ * the segmentation of its own spelling, so a miscovering, when there is one, is spelled by the tokens over one
+ * occurrence of the window, from the token containing its first byte to the token containing its last, and is at most
+ * 2L + |window| - 2 bytes long, L the longest token. Adjacency is read off the automaton, the state a token entered
+ * deciding which tokens may follow it. On the automaton of an adjacency relation the certificate is decided by the same
+ * search under the encoder whose relation it is, over the strings its chains spell, since token_automaton() over a
+ * relation assumes a projective encoder, for which the theorem holds.
  *
  * The search runs over nodes (state, k), the state the last token entered and the number of the window's bytes spelled
  * so far. A token holding the whole window is a miscovering by itself, unless it holds it at its start and the origin
