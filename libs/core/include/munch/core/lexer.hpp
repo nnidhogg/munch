@@ -274,7 +274,8 @@ public:
      * 01} the window 1001 is certified at origin 2 and occurs in no completely tokenizable input, while 001 occurs in
      * the input 0001. The question is asked over nonempty inputs, the empty input, which contains the empty window
      * alone, being no input a cut could fall in, so the empty window has a shortest token as its witness and, under a
-     * token set with no positive-width token, none. The derivation is dfa::window_occurrence()'s.
+     * token set with no positive-width token, none. The question is NL-complete, by Theorem 13 of arXiv:2608.09761v4.
+     * The derivation is dfa::window_occurrence()'s.
      * @param window The byte string to find.
      * @param cap The largest number of search states to hold before giving up, dfa::occurrence_cap unless told.
      * @return The witness and whether the search settled the question; an empty witness from an exhaustive search
@@ -300,7 +301,8 @@ public:
      * origin, its certificate being vacuous. Decided by the same boundary-guessing search as window_occurrence(), with
      * one bit beside the matcher for whether the latest token start sits at the origin, the witness the shortest
      * failing input: over {a, abc, bx, x} the window ab is refused, and its refusal is right at both origins, abx
-     * covering the b from offset 1 and abc from offset 0. The derivation is dfa::window_counterexample()'s.
+     * covering the b from offset 1 and abc from offset 0. Whether (W, o) is a certified split window is NL-complete, by
+     * Theorem 13 of arXiv:2608.09761v4. The derivation is dfa::window_counterexample()'s.
      * @param window The byte string of the certificate, non-empty.
      * @param origin The offset into the window the certificate places the covering token's start at, inside it.
      * @param cap The largest number of search states to hold before giving up, dfa::counterexample_cap unless told.
@@ -329,8 +331,8 @@ public:
      * certificate holds of the window 0011 at any origin, its final byte covered from offset 1 in 0011x and from offset
      * 3 in 0011, while gaps 0 and 1 are boundaries at every occurrence and 0011x refutes gaps 2, 3 and 4. The claim is
      * monotone, a boundary at every occurrence of W staying one in every extension of it at the shifted gap, and a
-     * window window_occurrence() places in no input has no counterexample at any gap. The derivation is
-     * dfa::boundary_counterexample()'s.
+     * window window_occurrence() places in no input has no counterexample at any gap. The claim is the verdict forced,
+     * NL-complete by Theorem 13 of arXiv:2608.09761v4. The derivation is dfa::boundary_counterexample()'s.
      * @param window The byte string whose occurrences are asked about, non-empty.
      * @param gap The gap of the window at which a boundary must sit, from zero to the window's length.
      * @param cap The largest number of search states to hold before giving up, dfa::refutation_cap unless told.
@@ -351,8 +353,8 @@ public:
      * The other side of boundary_counterexample(), decided by the same search with the gap's bit read the other way,
      * the input's end counting as a boundary for the gap after the window. The two claims together are the window
      * certificate: (W, o) holds exactly when gap o is a boundary at every occurrence and every later gap inside the
-     * window is crossed at every occurrence. The claim is monotone in the same way. The derivation is
-     * dfa::crossing_counterexample()'s.
+     * window is crossed at every occurrence. The claim is monotone in the same way, and it is the verdict crossed,
+     * PSPACE-complete by Theorem 12 of arXiv:2608.09761v4. The derivation is dfa::crossing_counterexample()'s.
      * @param window The byte string whose occurrences are asked about, non-empty.
      * @param gap The gap of the window a token must cross, from zero to the window's length.
      * @param cap The largest number of search states to hold before giving up, dfa::refutation_cap unless told.
@@ -373,8 +375,9 @@ public:
      * cap, asked first, or by any gap whose two searches under the cap, boundary_counterexample() and
      * crossing_counterexample(), both exhaust without a witness, which can come under a cap that stops the occurrence
      * search. Otherwise the two searches per gap give must, never or may, each with a witness showing the window
-     * occurring, and undetermined where the cap stopped a search without such proof. The derivation is
-     * dfa::boundary_profile()'s.
+     * occurring, and undetermined where the cap stopped a search without such proof. Of the verdicts of
+     * arXiv:2608.09761v4, open (may here) and crossed (never here) are PSPACE-complete to decide by its Theorem 12, and
+     * forced (must here) is NL-complete by its Theorem 13. The derivation is dfa::boundary_profile()'s.
      * @param window The byte string whose gaps are decided, non-empty.
      * @param cap The largest number of search states each search holds before giving up, dfa::refutation_cap unless
      *        told.

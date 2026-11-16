@@ -521,8 +521,14 @@ prove absence under a cap that stops the occurrence search. `must`, `never` and 
 search has shown to occur: two searches per gap, each under the cap on its own, give each gap `must`, `never` or `may`,
 each with a witness showing the window occurring, or `undetermined` where the cap stopped a search without such proof.
 Must and never are monotone, a gap keeping its verdict in every extension of the window at the shifted gap unless the
-extension occurs nowhere, while may carries nothing. The cap, the empty window and a gap past the window's end are
-handled as for `window_counterexample()`:
+extension occurs nowhere, while may carries nothing. By Theorems 12 and 13 of
+[arXiv:2608.09761v4](https://arxiv.org/abs/2608.09761v4), measured in the compiled automaton and the window, whether a
+gap is a boundary at some occurrence is PSPACE-complete, and so is deciding never or may, the paper's crossed and open,
+all three PSPACE-hard already for one token kind over five symbols and a start state that neither accepts nor is
+re-entered, on a window that occurs. Whether the window occurs, whether a token crosses a gap at some occurrence, the
+verdict must and whether a given pair is a certified split window, or a witnessed one, are NL-complete, each NL-hard
+already for one token kind over two symbols, a start state that neither accepts nor is re-entered, and a window of a
+single byte. The cap, the empty window and a gap past the window's end are handled as for `window_counterexample()`:
 
 ```cpp
 builder.add_token(text("0"), Token::Zero, 1);

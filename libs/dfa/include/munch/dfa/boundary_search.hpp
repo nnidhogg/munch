@@ -489,6 +489,10 @@ inline constexpr std::size_t modulo_cap{1U << 20U};
  * occurs in no nonempty input and the answer is none. The search starts at the initial state and reaches every position
  * a scan can stand in, so the accepting states no input reaches never enter it, and a nullable token set is decided
  * through the positive-width equivalent the simulator compiled, as every decision here is.
+ *
+ * Given the compiled token set and the window, the question is NL-complete, by Theorem 13 of arXiv:2608.09761v4, and
+ * NL-hard already for one token kind over two symbols, a start state that neither accepts nor is re-entered, and a
+ * window of a single byte.
  * @param simulator The compiled token set.
  * @param window The byte string to find.
  * @param cap The most search states to hold at once, a ceiling rather than a budget spent afterwards: a state beyond it
@@ -527,6 +531,10 @@ inline constexpr std::size_t modulo_cap{1U << 20U};
  * shortest failing input, and never empty. The search starts at the initial state and reaches every position a scan can
  * stand in, so the accepting states no input reaches never enter it, and a nullable token set is decided through the
  * positive-width equivalent the simulator compiled, as every decision here is.
+ *
+ * Given the compiled token set, the window and the origin, whether (W, o) is a certified split window is NL-complete,
+ * by Theorem 13 of arXiv:2608.09761v4, and NL-hard already for one token kind over two symbols, a start state that
+ * neither accepts nor is re-entered, and a window of a single byte.
  * @param simulator The compiled token set.
  * @param window The byte string of the certificate, non-empty.
  * @param origin The offset into the window at which the certificate places the covering token's start, inside it.
@@ -569,6 +577,11 @@ inline constexpr std::size_t modulo_cap{1U << 20U};
  * The search starts at the initial state and reaches every position a scan can stand in, so the accepting states no
  * input reaches never enter it, and a nullable token set is decided through the positive-width equivalent the simulator
  * compiled, as every decision here is.
+ *
+ * Given the compiled token set, the window and the gap, whether a token crosses the gap at some occurrence is
+ * NL-complete, and so is the claim decided here, the verdict forced, by Theorem 13 of arXiv:2608.09761v4, both NL-hard
+ * already for one token kind over two symbols, a start state that neither accepts nor is re-entered, and a window of a
+ * single byte.
  * @param simulator The compiled token set.
  * @param window The byte string whose occurrences are asked about, non-empty.
  * @param gap The gap of the window at which a boundary must sit, from zero to the window's length.
@@ -599,6 +612,11 @@ inline constexpr std::size_t modulo_cap{1U << 20U};
  * claim when the gap's bit is set once the gap is settled, and conforms, its branch dropped, when it is clear. The gap
  * after the window is cut when the final byte closes its token, the input ending right there among the ways it can. A
  * witness is a shortest refuting input, and never empty.
+ *
+ * Given the compiled token set, the window and the gap, whether the gap is a boundary at some occurrence is
+ * PSPACE-complete, and so is the claim decided here, the verdict crossed, by Theorem 12 of arXiv:2608.09761v4, both
+ * PSPACE-hard already for one token kind over five symbols and a start state that neither accepts nor is re-entered, on
+ * a window that occurs in some completely tokenizable input.
  * @param simulator The compiled token set.
  * @param window The byte string whose occurrences are asked about, non-empty.
  * @param gap The gap of the window a token must cross, from zero to the window's length.
@@ -629,6 +647,9 @@ inline constexpr std::size_t modulo_cap{1U << 20U};
  * for may; undetermined where the cap stopped a search without such proof, a witness the other search found still
  * refuting its side. Over {0, 1, x, 001x, 011x} the window 0011 is must at gaps 0 and 1 and may at 2, 3 and 4; over
  * {ab} the window b is never at gap 0 and must at gap 1.
+ *
+ * Of the verdicts of arXiv:2608.09761v4, open (may here) and crossed (never here) are PSPACE-complete to decide by its
+ * Theorem 12, and forced (must here) is NL-complete by its Theorem 13.
  * @param simulator The compiled token set.
  * @param window The byte string whose gaps are decided, non-empty.
  * @param cap The most search states each search holds at once, the occurrence search's among them, as
