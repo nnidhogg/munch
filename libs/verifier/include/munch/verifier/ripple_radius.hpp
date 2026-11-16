@@ -74,7 +74,7 @@ struct Effective_self_pair
 using Ripple_radius = std::variant<Finite_ripple, Effective_self_pair>;
 
 /**
- * @brief The part of the overlap graph ripple_radius() explores, both giving the same decision to the byte.
+ * @brief The part of the overlap graph ripple_radius_with_graph() explores, both giving the same decision to the byte.
  */
 enum class Overlap_graph : std::size_t
 {
@@ -133,10 +133,11 @@ enum class Overlap_graph : std::size_t
  * inside its token, whose next byte is the one byte the pair reads, so only a copy at a token end branches. On a step
  * that leads on to a pair ending both copies the token it begins and the bytes the other copy's token has still to read
  * are one a prefix of the other, since both copies spell the bytes that follow and end their tokens on them, so the
- * live graph, explored by default, begins only those tokens and the stopped graph every token beginning with the byte
- * read. The pairs from which a marked step leads to a pair ending both copies are the same in both and form an acyclic
- * graph, and the longest path to a marked step, plus one, is the radius, less the step's offset in the first copy's
- * token the mirrored constant, the path completed to a pair ending both copies spelling the attaining input.
+ * live graph, the one ripple_radius() explores, begins only those tokens and the stopped graph every token beginning
+ * with the byte read. The pairs from which a marked step leads to a pair ending both copies are the same in both and
+ * form an acyclic graph, and the longest path to a marked step, plus one, is the radius, less the step's offset in the
+ * first copy's token the mirrored constant, the path completed to a pair ending both copies spelling the attaining
+ * input.
  *
  * With S the total length of the canonical tokens and V their number, the pairs the stopped graph expands have one copy
  * inside a token and the other inside one or at a token end, O(S^2 + V S) of them, each with at most V steps and a pair
@@ -168,13 +169,25 @@ enum class Overlap_graph : std::size_t
  * numbers from F(1) = F(2) = 1, since at most one part of a useful merge is the product of the useful merge just before
  * it, and the table whose every merge joins the token before the latest to the latest, from a and b, attains it.
  * @param merges The admissible merge table in rank order, each part a byte or the product of an earlier merge.
- * @param graph The part of the overlap graph explored, the live graph unless the stopped one is asked for.
  * @return The radius with the mirrored constant when finite, otherwise the first effective self-pair.
  * @throws std::invalid_argument If a merge names a part that neither the alphabet nor an earlier merge carries, or a
  *         product that the alphabet or an earlier merge already carries; the message names the merge and its rank,
  *         each spelling quoted, a byte outside printable ASCII written `\xHH` and the quote and the backslash escaped.
  */
-[[nodiscard]] Ripple_radius ripple_radius(std::span<const Merge> merges, Overlap_graph graph = Overlap_graph::live);
+[[nodiscard]] Ripple_radius ripple_radius(std::span<const Merge> merges);
+
+/**
+ * @brief Decides the origin radius of a byte-pair table as ripple_radius(merges) does, over the part of the overlap
+ *        graph asked for.
+ *
+ * The live graph is the one ripple_radius(merges) explores, and the stopped graph, every token beginning with the byte
+ * read, gives the same decision to the byte in O(T + S^2 + V^2 S) expected time and space.
+ * @param merges The admissible merge table in rank order, each part a byte or the product of an earlier merge.
+ * @param graph The part of the overlap graph explored.
+ * @return As for ripple_radius(merges).
+ * @throws std::invalid_argument As for ripple_radius(merges).
+ */
+[[nodiscard]] Ripple_radius ripple_radius_with_graph(std::span<const Merge> merges, Overlap_graph graph);
 
 /**
  * @brief Decides the origin radius of a merge table over an alphabet of characters, reading each character as its
@@ -202,15 +215,52 @@ enum class Overlap_graph : std::size_t
  * order, it returns what the byte overload returns on the same table, to the byte.
  * @param merges The admissible merge table in rank order, each part a character or the product of an earlier merge.
  * @param alphabet The alphabet, UTF-8 text whose characters are the tokens before any merge, each once.
- * @param graph The part of the overlap graph explored, the live graph unless the stopped one is asked for.
  * @return The radius with the mirrored constant when finite, otherwise the first effective self-pair.
  * @throws std::invalid_argument If the alphabet holds a character twice, or a merge names a part that neither the
  *         alphabet nor an earlier merge carries, or a product that the alphabet or an earlier merge already carries;
  *         the message names the character, or the merge and its rank, each spelling quoted, a byte outside printable
  *         ASCII written `\xHH` and the quote and the backslash escaped.
  */
-[[nodiscard]] Ripple_radius ripple_radius(
-        std::span<const Merge> merges, std::string_view alphabet, Overlap_graph graph = Overlap_graph::live);
+[[nodiscard]] Ripple_radius ripple_radius(std::span<const Merge> merges, std::string_view alphabet);
+
+/**
+ * @brief Decides the origin radius of a merge table over an alphabet of characters as ripple_radius(merges, alphabet)
+ *        does, over the part of the overlap graph asked for.
+ *
+ * The live graph is the one ripple_radius(merges, alphabet) explores, and the stopped graph, every token beginning with
+ * the byte read, gives the same decision to the byte in O(T + S^2 + V^2 S) expected time and space, T counting the
+ * alphabet's bytes as well.
+ * @param merges The admissible merge table in rank order, each part a character or the product of an earlier merge.
+ * @param alphabet The alphabet, UTF-8 text whose characters are the tokens before any merge, each once.
+ * @param graph The part of the overlap graph explored.
+ * @return As for ripple_radius(merges, alphabet).
+ * @throws std::invalid_argument As for ripple_radius(merges, alphabet).
+ */
+[[nodiscard]] Ripple_radius ripple_radius_with_graph(
+        std::span<const Merge> merges, std::string_view alphabet, Overlap_graph graph);
+
+/**
+ * @brief Returns the number of steps of the overlap graph that ripple_radius_with_graph(merges, graph) explores on a
+ *        byte-pair table, the edges its exploration follows, zero when the table is empty or has an effective
+ *        self-pair.
+ *
+ * It runs the decision ripple_radius_with_graph(merges, graph) runs and returns the number of steps of the graph that
+ * decision explores and reads its radius off. The sources are the pairs of the start with every canonical token
+ * beginning with a byte the table names, the second copy having read that byte as the first byte of the token, so one
+ * call explores the one graph every prepended byte the table names reaches, each step counted once. From the sources
+ * the exploration expands every pair it reaches except those ending both copies at a token end, and it counts every
+ * step out of a pair expanded, one for each reading of the pair's byte by the first copy together with each by the
+ * second, a step into a pair found before counted as well. Either graph gives the same decision to the byte, the live
+ * graph in O(S^2) steps and the stopped graph in O(S^2 + V^2 S), the counts the bounds of ripple_radius(merges) are
+ * stated in. With an effective self-pair the decision returns it before exploring any graph, and the number is zero. It
+ * takes the decision's time and space, O(T + S^2) expected over the live graph and O(T + S^2 + V^2 S) over the stopped
+ * graph.
+ * @param merges The admissible merge table in rank order, each part a byte or the product of an earlier merge.
+ * @param graph The part of the overlap graph explored.
+ * @return The number of steps.
+ * @throws std::invalid_argument As for ripple_radius(merges).
+ */
+[[nodiscard]] std::size_t overlap_graph_steps(std::span<const Merge> merges, Overlap_graph graph);
 
 } // namespace munch::verifier
 

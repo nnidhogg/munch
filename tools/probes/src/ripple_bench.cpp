@@ -1,5 +1,5 @@
-// Times verifier::ripple_radius() on prefixes of GPT-2's merge table, with the process's peak resident memory, and
-// replays the witnesses of every finite answer on a reference encoder.
+// Times verifier::ripple_radius_with_graph() on prefixes of GPT-2's merge table, with the process's peak resident
+// memory, and replays the witnesses of every finite answer on a reference encoder.
 //
 // The tables. For each prefix asked, the first n merges of the table read from gpt2-merges.txt, each part decoded from
 // the file's byte-to-unicode spelling back to bytes, and the same prefix without its merges of equal parts and without
@@ -17,10 +17,10 @@
 // neither a byte nor an earlier merge's product, abort the process on the uncaught exception.
 //
 // What it measures. Per table: its merges, the verdict with the radius and the mirrored constant or the effective
-// self-pair's rank, the time of the one call to ripple_radius(), and the process's peak resident memory after it. The
-// call explores the live graph, its default, or with --stopped the stopped graph whole, and the output's header names
-// the graph. The peak only grows, so a collection runs one prefix per process. Every number printed is run-local: the
-// output carries commit and dirty-state provenance, and a figure is quoted with the machine it ran on.
+// self-pair's rank, the time of the one call to ripple_radius_with_graph(), and the process's peak resident memory
+// after it. The call explores the live graph, the default, or with --stopped the stopped graph whole, and the output's
+// header names the graph. The peak only grows, so a collection runs one prefix per process. Every number printed is
+// run-local: the output carries commit and dirty-state provenance, and a figure is quoted with the machine it ran on.
 //
 // Usage: munch_ripple_bench [--stopped] <gpt2-merges.txt> <prefix>...
 
@@ -426,7 +426,7 @@ bool time_table(const Named_table& table, const Overlap_graph graph)
 
     const auto started{std::chrono::steady_clock::now()};
 
-    const auto ripple{munch::verifier::ripple_radius(merges, graph)};
+    const auto ripple{munch::verifier::ripple_radius_with_graph(merges, graph)};
 
     const auto stopped{std::chrono::steady_clock::now()};
 
@@ -462,8 +462,8 @@ bool time_table(const Named_table& table, const Overlap_graph graph)
 } // namespace
 
 /**
- * @brief Times ripple_radius() on each prefix asked of a merge table and on the prefix without its merges of equal
- *        parts, printing a line per table after the provenance.
+ * @brief Times ripple_radius_with_graph() on each prefix asked of a merge table and on the prefix without its merges of
+ *        equal parts, printing a line per table after the provenance.
  * @param argc The argument count.
  * @param argv Optionally --stopped, then the table file, then the prefix lengths.
  * @return EXIT_SUCCESS, or EXIT_FAILURE when an argument or the table is refused or a witness is not attained.

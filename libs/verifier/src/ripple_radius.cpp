@@ -367,6 +367,22 @@ struct Best
 };
 
 /**
+ * @brief The decision on a merge table with the number of steps of the overlap graph it explored.
+ */
+struct Explored_radius
+{
+    /**
+     * @brief The radius with the mirrored constant when finite, otherwise the first effective self-pair.
+     */
+    Ripple_radius radius{};
+
+    /**
+     * @brief The number of steps of the explored graph, zero when the merges meet an effective self-pair first.
+     */
+    std::size_t steps{};
+};
+
+/**
  * @brief Returns the token of a merge's product, past the symbols of the alphabet.
  * @param table The resolved merge table.
  * @param rank The merge's rank.
@@ -976,11 +992,22 @@ public:
 
     /**
      * @brief Explores the overlap graph from every node pairing the start with a canonical token, a node ending both
-     *        copies a leaf, and returns the radius and the mirrored constant read off it, each with a prepended input
+     *        copies a leaf.
+     */
+    void explore();
+
+    /**
+     * @brief Returns the radius and the mirrored constant read off the explored graph, each with a prepended input
      *        attaining it.
      * @return The finite ripple.
      */
     [[nodiscard]] Finite_ripple run() &&;
+
+    /**
+     * @brief Returns the number of steps of the explored graph, out of every node it expands.
+     * @return The number of steps.
+     */
+    [[nodiscard]] std::size_t steps() const;
 
 private:
     /**
@@ -1127,7 +1154,7 @@ Exploration::Exploration(Vocabulary vocabulary, const Overlap_graph graph)
     : vocabulary_{std::move(vocabulary)}, graph_{graph}
 {}
 
-Finite_ripple Exploration::run() &&
+void Exploration::explore()
 {
     for (const auto symbol : vocabulary_.named)
     {
@@ -1149,27 +1176,6 @@ Finite_ripple Exploration::run() &&
 
         expand(node);
     }
-
-    const auto predecessors{predecessors_of()};
-
-    const auto live{leading_to(predecessors, accepting_)};
-
-    const auto marked{marking(live)};
-
-    const auto marked_part{leading_to(predecessors, marked)};
-
-    const auto longest{longest_paths(marked_part)};
-
-    const auto [radius, mirrored]{best_steps(live, marked_part, longest)};
-
-    auto radius_witness{witness(longest, radius)};
-
-    auto mirrored_witness{witness(longest, mirrored)};
-
-    return {.radius = radius.value,
-            .radius_witness = std::move(radius_witness),
-            .mirrored = mirrored.value,
-            .mirrored_witness = std::move(mirrored_witness)};
 }
 
 std::size_t Exploration::intern(const Pair& pair)
@@ -1306,6 +1312,30 @@ bool Exploration::is_adjacent(const Token_t first, const Token_t second)
     adjacencies_.emplace(std::pair{first, second}, adjacent);
 
     return adjacent;
+}
+
+Finite_ripple Exploration::run() &&
+{
+    const auto predecessors{predecessors_of()};
+
+    const auto live{leading_to(predecessors, accepting_)};
+
+    const auto marked{marking(live)};
+
+    const auto marked_part{leading_to(predecessors, marked)};
+
+    const auto longest{longest_paths(marked_part)};
+
+    const auto [radius, mirrored]{best_steps(live, marked_part, longest)};
+
+    auto radius_witness{witness(longest, radius)};
+
+    auto mirrored_witness{witness(longest, mirrored)};
+
+    return {.radius = radius.value,
+            .radius_witness = std::move(radius_witness),
+            .mirrored = mirrored.value,
+            .mirrored_witness = std::move(mirrored_witness)};
 }
 
 std::vector<std::vector<std::size_t>> Exploration::predecessors_of() const
@@ -1528,18 +1558,30 @@ std::string Exploration::completion(const std::size_t from) const
     return bytes;
 }
 
+std::size_t Exploration::steps() const
+{
+    std::size_t count{0};
+
+    for (const auto& out : steps_)
+    {
+        count += out.size();
+    }
+
+    return count;
+}
+
 /**
- * @brief Decides the origin radius of a merge table over an alphabet of symbols: the first effective self-pair when
- *        the merges taken in rank order meet one, and otherwise the radius and the mirrored constant the overlap graph
- *        gives.
+ * @brief Decides the origin radius of a merge table over an alphabet of symbols: the first effective self-pair when the
+ *        merges taken in rank order meet one, and otherwise the radius and the mirrored constant the overlap graph
+ *        gives, with the number of steps of the graph explored.
  * @param merges The merge table in rank order.
  * @param symbols The alphabet's symbols, each spelled by its bytes, numbered in order.
  * @param graph The part of the overlap graph explored.
- * @return The radius with the mirrored constant when finite, otherwise the first effective self-pair.
+ * @return The radius with the mirrored constant when finite, otherwise the first effective self-pair, and the steps.
  * @throws std::invalid_argument If the alphabet holds a symbol twice, or a merge names a part the vocabulary so far
  *         does not carry, or a product it already carries.
  */
-[[nodiscard]] Ripple_radius radius_over(
+[[nodiscard]] Explored_radius radius_over(
         const std::span<const Merge> merges, const std::span<const std::string> symbols, const Overlap_graph graph)
 {
     const auto table{table_of(merges, symbols)};
@@ -1548,7 +1590,7 @@ std::string Exploration::completion(const std::size_t from) const
 
     if (self_pair)
     {
-        return Effective_self_pair{.rank = *self_pair};
+        return {.radius = Effective_self_pair{.rank = *self_pair}, .steps = 0};
     }
 
     auto spellings{spellings_of(merges, symbols)};
@@ -1557,24 +1599,47 @@ std::string Exploration::completion(const std::size_t from) const
 
     Exploration exploration{std::move(vocabulary), graph};
 
-    return std::move(exploration).run();
+    exploration.explore();
+
+    const auto steps{exploration.steps()};
+
+    auto ripple{std::move(exploration).run()};
+
+    return {.radius = std::move(ripple), .steps = steps};
 }
 
 } // namespace
 
-Ripple_radius ripple_radius(const std::span<const Merge> merges, const Overlap_graph graph)
+Ripple_radius ripple_radius(const std::span<const Merge> merges)
+{
+    return ripple_radius_with_graph(merges, Overlap_graph::live);
+}
+
+Ripple_radius ripple_radius_with_graph(const std::span<const Merge> merges, const Overlap_graph graph)
 {
     const auto symbols{byte_alphabet()};
 
-    return radius_over(merges, symbols, graph);
+    return radius_over(merges, symbols, graph).radius;
 }
 
-Ripple_radius ripple_radius(
+Ripple_radius ripple_radius(const std::span<const Merge> merges, const std::string_view alphabet)
+{
+    return ripple_radius_with_graph(merges, alphabet, Overlap_graph::live);
+}
+
+Ripple_radius ripple_radius_with_graph(
         const std::span<const Merge> merges, const std::string_view alphabet, const Overlap_graph graph)
 {
     const auto symbols{characters_of(alphabet)};
 
-    return radius_over(merges, symbols, graph);
+    return radius_over(merges, symbols, graph).radius;
+}
+
+std::size_t overlap_graph_steps(const std::span<const Merge> merges, const Overlap_graph graph)
+{
+    const auto symbols{byte_alphabet()};
+
+    return radius_over(merges, symbols, graph).steps;
 }
 
 } // namespace munch::verifier

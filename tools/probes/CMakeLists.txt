@@ -415,9 +415,9 @@ if (MUNCH_BUILD_TESTS)
     add_test(NAME munch_planner_bench COMMAND munch_planner_bench 16384 1)
 endif ()
 
-# The time and peak memory of verifier::ripple_radius() on prefixes of GPT-2's merge table, as it is and without its
-# merges of equal parts, with every finite answer's witnesses replayed on a reference encoder. The test runs it on a
-# small table written here; a collection passes gpt2-merges.txt.
+# The time and peak memory of verifier::ripple_radius_with_graph() on prefixes of GPT-2's merge table, as it is and
+# without its merges of equal parts, with every finite answer's witnesses replayed on a reference encoder. The test runs
+# it on a small table written here; a collection passes gpt2-merges.txt.
 add_executable(munch_ripple_bench src/ripple_bench.cpp)
 
 add_dependencies(munch_ripple_bench munch_provenance)

@@ -11,6 +11,7 @@
 #include <map>
 #include <optional>
 #include <random>
+#include <span>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -1442,6 +1443,17 @@ Stopped_count stopped_count(const Full_product& product, const std::vector<bool>
 }
 
 /**
+ * @brief Whether an overload of ripple_radius() has the function type probed, its address converting to a pointer to
+ *        that type.
+ *
+ * The dependent probe for the overloads' types: a cast over concrete types is checked as ordinary code, so the type is
+ * asked through this instead.
+ * @tparam Function The function type probed.
+ */
+template <typename Function>
+concept Ripple_radius_overload = requires { static_cast<Function*>(&ripple_radius); };
+
+/**
  * @brief Returns the decision on a table over a part of the overlap graph: over the alphabet when the texts are read as
  *        characters, and over the bytes otherwise.
  * @param merges The merge table in rank order.
@@ -1456,10 +1468,10 @@ Ripple_radius decided_over(
 {
     if (reading == Reading::characters)
     {
-        return ripple_radius(merges, alphabet, graph);
+        return ripple_radius_with_graph(merges, alphabet, graph);
     }
 
-    return ripple_radius(merges, graph);
+    return ripple_radius_with_graph(merges, graph);
 }
 
 /**
@@ -1665,10 +1677,11 @@ std::vector<Merge> random_table(
 
 /**
  * @brief Returns the table of 4m merges whose stopped graph under the one prepended byte a has m^3 + 2m^2 + 4m steps,
- *        2m^2 + 4m of them live: the merges (a, z_k), then (a z_k, g), then (c, x_i), then (g, c x_i), for k and i from
- *        1 to m, each z_k a capital letter and each x_i a small one from h on.
+ *        2m^2 + 4m of them into a pair that leads to a pair ending both copies: the merges (a, z_k), then (a z_k, g),
+ *        then (c, x_i), then (g, c x_i), for k and i from 1 to m, each z_k a capital letter and each x_i a small one
+ *        from h on.
  * @param m The number of merges of each of the four kinds, from 1 to 12.
- * @return The merge table in rank order, of size 12m + 3.
+ * @return The 4m merges in rank order.
  */
 std::vector<Merge> cubic_family(const std::size_t m)
 {
@@ -2146,6 +2159,30 @@ TEST(Ripple_radius_test, Over_the_characters_of_ascii_every_universe_of_the_fixt
     EXPECT_EQ(refused, 80U);
 }
 
+TEST(Ripple_radius_test, The_overloads_of_ripple_radius_take_the_table_alone_or_with_the_alphabet_and_never_a_graph)
+{
+    static_assert(Ripple_radius_overload<Ripple_radius(std::span<const Merge>)>);
+    static_assert(Ripple_radius_overload<Ripple_radius(std::span<const Merge>, std::string_view)>);
+
+    static_assert(!Ripple_radius_overload<Ripple_radius(std::span<const Merge>, Overlap_graph)>);
+    static_assert(!Ripple_radius_overload<Ripple_radius(std::span<const Merge>, std::string_view, Overlap_graph)>);
+    static_assert(!Ripple_radius_overload<Ripple_radius(std::span<const Merge>, std::string_view, std::size_t)>);
+}
+
+TEST(Ripple_radius_test, Either_graph_decides_as_ripple_radius)
+{
+    const std::vector<Merge> merges{{.left = "a", .right = "b"}};
+
+    const auto over_bytes{written(ripple_radius(merges))};
+
+    const auto over_characters{written(ripple_radius(merges, "ab"))};
+
+    EXPECT_EQ(written(ripple_radius_with_graph(merges, Overlap_graph::live)), over_bytes);
+    EXPECT_EQ(written(ripple_radius_with_graph(merges, Overlap_graph::stopped)), over_bytes);
+    EXPECT_EQ(written(ripple_radius_with_graph(merges, "ab", Overlap_graph::live)), over_characters);
+    EXPECT_EQ(written(ripple_radius_with_graph(merges, "ab", Overlap_graph::stopped)), over_characters);
+}
+
 TEST(Ripple_radius_test, On_every_universe_of_both_fixtures_the_live_graph_decides_as_the_stopped_graph)
 {
     const std::vector<std::pair<std::string, Reading>> fixtures{
@@ -2338,6 +2375,48 @@ TEST(Ripple_radius_test, The_family_of_4m_merges_has_cubic_stopped_steps_under_a
         EXPECT_EQ(nodes, 2 * m * m + 7 * m + 1) << context;
         EXPECT_EQ(steps, m * m * m + 2 * m * m + 4 * m) << context;
         EXPECT_EQ(live_steps, 2 * m * m + 4 * m) << context;
+    }
+}
+
+TEST(Ripple_radius_test, The_family_of_4m_merges_is_explored_in_its_cubic_stopped_steps_or_in_3m2_plus_8m_live_ones)
+{
+    for (std::size_t m{1}; m <= 12; ++m)
+    {
+        const auto merges{cubic_family(m)};
+
+        const auto context{std::format("the family at m = {}", m)};
+
+        const auto product{full_product(merges, Reading::bytes, alphabet_symbols(Reading::bytes, {}))};
+
+        std::vector<bool> sources(product.pairs.size(), false);
+
+        for (std::size_t node{0}; node < product.pairs.size(); ++node)
+        {
+            sources[node] = !product.pairs[node].base.token;
+        }
+
+        const auto [nodes, steps, live_steps]{stopped_count(product, sources)};
+
+        EXPECT_EQ(steps, m * m * m + 3 * m * m + 7 * m) << context;
+        EXPECT_EQ(overlap_graph_steps(merges, Overlap_graph::stopped), steps) << context;
+        EXPECT_EQ(overlap_graph_steps(merges, Overlap_graph::live), 3 * m * m + 8 * m) << context;
+    }
+}
+
+TEST(Ripple_radius_test,
+     The_steps_are_zero_on_the_empty_table_and_a_self_pair_and_a_part_the_vocabulary_does_not_carry_is_refused_first)
+{
+    const std::vector<Merge> empty{};
+
+    const std::vector<Merge> self_pair{{.left = "a", .right = "a"}};
+
+    const std::vector<Merge> unavailable{{.left = "a", .right = "a"}, {.left = "zz", .right = "b"}};
+
+    for (const auto graph : {Overlap_graph::live, Overlap_graph::stopped})
+    {
+        EXPECT_EQ(overlap_graph_steps(empty, graph), 0U);
+        EXPECT_EQ(overlap_graph_steps(self_pair, graph), 0U);
+        EXPECT_THROW(std::ignore = overlap_graph_steps(unavailable, graph), std::invalid_argument);
     }
 }
 

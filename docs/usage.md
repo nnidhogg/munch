@@ -1050,7 +1050,8 @@ does. With S the total length of the canonical tokens, V their number and T the 
 alphabet when one is supplied, that live graph has O(S^2) steps and the whole call takes O(T + S^2) expected time, its
 hash lookups taking constant time on average, quadratic in the table's size, since its pairs are hashed and whether two
 canonical tokens encode as themselves is read off the merges of each one's own run in fewer steps than they have bytes.
-`verifier::Overlap_graph::stopped` as the last argument explores the stopped graph whole, every token beginning with the
+`verifier::Overlap_graph::stopped` as the last argument of `verifier::ripple_radius_with_graph(merges, graph)` or
+`ripple_radius_with_graph(merges, alphabet, graph)` explores the stopped graph whole, every token beginning with the
 byte read, with the same decision to the byte in O(T + S^2 + V^2 S), cubic; the part of the product of the two copies
 that the sources reach is cubic as well, and the product expanded whole is quartic.
 [benchmarks.md](benchmarks.md#the-origin-radius-on-gpt-2s-prefixes) times it on GPT-2's prefixes. The overlap graph
@@ -1071,8 +1072,18 @@ finite.radius;                                       // 2, both bytes of bc cove
 finite.mirrored;                                     // 1, the changed token bc beginning at 0
 verifier::ripple_radius(doubled);                    // the effective self-pair at rank 1: (a,b) leaves abab as ab|ab
 
-verifier::ripple_radius(merges, verifier::Overlap_graph::stopped);  // the same, over the stopped graph whole
+verifier::ripple_radius_with_graph(merges, verifier::Overlap_graph::stopped);  // the same, over the stopped graph whole
 ```
+
+`verifier::overlap_graph_steps(merges, graph)` runs the decision `ripple_radius_with_graph(merges, graph)` runs on a
+merge table over bytes and returns the number of steps of the overlap graph it explores, the steps out of every pair the
+exploration expands in the one graph every prepended byte the table names reaches, and zero when the table is empty or
+has an effective self-pair; it has no form over an alphabet of characters. Both graphs give the same decision, so the
+number, the size of the explored graph, measures the live graph against the stopped one on a given table, at the cost of
+the decision. On the family of 4m merges (a, z_k), then (a z_k, g), then (c, x_i), then (g, c x_i), for k and i from 1
+to m, each z_k a capital letter and each x_i a small one from h on, the tests count, for m from 1 to 12 and from every
+prepended byte, m^3 + 3m^2 + 7m steps of the stopped graph and 3m^2 + 8m of the live graph. It refuses what
+`ripple_radius(merges)` refuses.
 
 `verifier::ripple_radius(merges, alphabet)` decides the radius over an alphabet of characters, as `merge_tower(merges,
 alphabet)` builds the tower. The alphabet is UTF-8 text whose characters are the tokens before any merge, a prepended

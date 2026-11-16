@@ -182,13 +182,13 @@ windows of four bytes cut 8.3% of the boundaries with gaps as long as a run, the
 
 ## **The Origin Radius on GPT-2's Prefixes**
 
-`munch_ripple_bench` times `verifier::ripple_radius()` on prefixes of GPT-2's merge table, read from the release's
-`gpt2-merges.txt` and decoded from its byte-to-unicode spelling to bytes, and prints for each table its merges, the
-verdict, the time of the call and the process's peak resident memory, which only grows, so a collection runs one prefix
-per process. Each prefix is timed twice: as it is, infinite from 42 merges on, the merge at rank 41 an effective
-self-pair that the merges in rank order give before any graph, and without its merges of equal parts and the merges
-built on them, which has no effective self-pair, so its finite radius is read off the overlap graph. The call explores
-the live graph, its default, and with `--stopped` the stopped graph whole, and the output's header names the graph.
+`munch_ripple_bench` times `verifier::ripple_radius_with_graph()` on prefixes of GPT-2's merge table, read from the
+release's `gpt2-merges.txt` and decoded from its byte-to-unicode spelling to bytes, and prints for each table its
+merges, the verdict, the time of the call and the process's peak resident memory, which only grows, so a collection runs
+one prefix per process. Each prefix is timed twice: as it is, infinite from 42 merges on, the merge at rank 41 an
+effective self-pair that the merges in rank order give before any graph, and without its merges of equal parts and the
+merges built on them, which has no effective self-pair, so its finite radius is read off the overlap graph. The probe
+explores the live graph by default, or the whole stopped graph with `--stopped`, and its output header names the graph.
 Before printing a finite answer it replays both witnesses on the encoder that applies the lowest-ranked merge at its
 leftmost occurrence, and a witness that does not attain its value exits 1.
 
