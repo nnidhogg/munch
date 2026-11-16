@@ -8,6 +8,7 @@ add_library(${PROJECT_NAME}
         src/mode.cpp
         src/mode_builder.cpp
         src/mode_lexer.cpp
+        src/window_planner.cpp
         src/determinize.cpp
         src/exceptions/state_limit_error.cpp
 )

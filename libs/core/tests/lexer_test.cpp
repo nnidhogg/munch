@@ -325,10 +325,12 @@ constexpr auto ignore_chunk_token{[]<typename T>(const std::size_t, const T, con
  * @param lexer The token set.
  * @param text The input to plan.
  * @param chunks The number of chunks aimed for, at least one.
+ * @param longest The longest window the walk tries, the planner's default budget unless a test asks for another.
  * @return Offsets from 0 to the input size inclusive; adjacent pairs delimit the chunks.
  */
 std::vector<std::size_t> reference_window_walk(
-        const Lexer& lexer, const std::string_view text, const std::size_t chunks)
+        const Lexer& lexer, const std::string_view text, const std::size_t chunks,
+        const std::size_t longest = Window_planner::longest_window)
 {
     std::vector<std::size_t> boundaries{0};
 
@@ -362,7 +364,7 @@ std::vector<std::size_t> reference_window_walk(
     }};
 
     const auto cut_at{[&](const std::size_t occurrence) -> std::optional<std::size_t> {
-        const auto limit{std::min(Window_planner::longest_window, size - occurrence)};
+        const auto limit{std::min(longest, size - occurrence)};
 
         for (auto length{Window_planner::shortest_window}; length <= limit; ++length)
         {
@@ -412,8 +414,9 @@ std::vector<std::size_t> reference_window_walk(
 }
 
 /**
- * @brief Expects the window planner to plan exactly as the reference walk at every chunk count of a spread, and every
- *        walk to make real cuts or to be one given refusal.
+ * @brief Expects the window planner to plan exactly as the reference walk at every chunk count of a spread, at the
+ *        default budget and at budgets on either side of it, and every walk at the default budget to make real cuts or
+ *        to be one given refusal.
  *
  * The comparison must be over real cuts, or the equality would hold vacuously between empty plans; where the walk
  * refuses, the refusal must be the walk's own conclusion, reached through the same candidates, not a guess.
@@ -431,6 +434,13 @@ void expect_planner_equals_walk(
         const auto planned{lexer.chunk_boundaries_with_windows(input, chunks)};
 
         EXPECT_EQ(planned, walk) << chunks;
+
+        for (const auto longest : {0U, 1U, 2U, 3U, 5U, 6U, 9U})
+        {
+            const auto budgeted{lexer.chunk_boundaries_with_windows(input, chunks, longest)};
+
+            EXPECT_EQ(budgeted, reference_window_walk(lexer, input, chunks, longest)) << chunks << ' ' << longest;
+        }
 
         if (refusal)
         {
@@ -830,6 +840,16 @@ concept Window_plan_over = requires(const Lexer& lexer, const Container& contain
 };
 
 /**
+ * @brief Whether Lexer::chunk_boundaries_with_windows() over a container with a window budget accepts the container
+ *        type.
+ * @tparam Container The container type probed.
+ */
+template <typename Container>
+concept Window_budget_plan_over = requires(const Lexer& lexer, const Container& container) {
+    lexer.chunk_boundaries_with_windows(container, std::size_t{2}, std::size_t{5});
+};
+
+/**
  * @brief Whether Lexer::tokenize_all_parallel() over a container accepts the container type.
  * @tparam Container The container type probed.
  */
@@ -871,6 +891,16 @@ concept Byte_plan_through = requires(const Lexer& lexer, const Iterator& iterato
 template <typename Iterator>
 concept Window_plan_through = requires(const Lexer& lexer, const Iterator& iterator) {
     lexer.chunk_boundaries_with_windows(iterator, iterator, std::size_t{2});
+};
+
+/**
+ * @brief Whether Lexer::chunk_boundaries_with_windows() over an iterator pair with a window budget accepts the iterator
+ *        type.
+ * @tparam Iterator The iterator type probed.
+ */
+template <typename Iterator>
+concept Window_budget_plan_through = requires(const Lexer& lexer, const Iterator& iterator) {
+    lexer.chunk_boundaries_with_windows(iterator, iterator, std::size_t{2}, std::size_t{5});
 };
 
 /**
@@ -3985,6 +4015,159 @@ TEST_F(Lexer_test, Window_planner_stops_at_the_documented_longest_window)
     EXPECT_EQ(plan, (std::vector<std::size_t>{0, input.size()}));
 }
 
+TEST_F(Lexer_test, A_window_budget_of_five_cuts_where_the_default_of_four_leaves_the_plan_whole)
+{
+    enum class Token_kind : std::uint8_t
+    {
+        double_b,
+        aab,
+        baa,
+        triple_a
+    };
+
+    // The token set of the test above, whose shortest usable certificate, baaab at 4, is one byte past the default
+    // budget: a planner given five bytes finds it, cuts where the walk at five does, and its chunks rejoin to the
+    // serial stream.
+    Builder builder{};
+
+    builder.add_token(text("bb"), Token_kind::double_b, 1);
+    builder.add_token(text("aab"), Token_kind::aab, 1);
+    builder.add_token(text("baa"), Token_kind::baa, 1);
+    builder.add_token(text("aaa"), Token_kind::triple_a, 1);
+
+    const auto lexer{builder.build()};
+
+    ASSERT_TRUE(certifies_no_byte(lexer));
+
+    EXPECT_EQ(Window_planner::longest_window, 4U);
+
+    using Found = std::optional<std::pair<std::size_t, std::size_t>>;
+
+    Window_planner by_default{};
+
+    Window_planner wider{5};
+
+    EXPECT_EQ(by_default.window_at(lexer.simulator(), std::string_view{"baaab"}.begin(), 5, 0), std::nullopt);
+    EXPECT_EQ(wider.window_at(lexer.simulator(), std::string_view{"baaab"}.begin(), 5, 0), Found({4, 5}));
+
+    std::string input{};
+
+    for (int block{0}; block < 8; ++block)
+    {
+        input += "bbaaabb";
+    }
+
+    const std::vector<std::size_t> whole{0, input.size()};
+
+    EXPECT_EQ(lexer.chunk_boundaries_with_windows(input, 2), whole);
+    EXPECT_EQ(lexer.chunk_boundaries_with_windows(input, 2, Window_planner::longest_window), whole);
+
+    for (const auto chunks : {2U, 3U, 5U})
+    {
+        const auto plan{lexer.chunk_boundaries_with_windows(input, chunks, 5)};
+
+        EXPECT_EQ(plan, reference_window_walk(lexer, input, chunks, 5)) << chunks;
+
+        ASSERT_GT(plan.size(), 2U) << chunks;
+
+        expect_rejoined_equals_serial<Token_kind>(lexer, input, plan);
+    }
+}
+
+TEST_F(Lexer_test, A_window_budget_under_the_four_byte_study_window_leaves_the_plan_whole)
+{
+    enum class Token_kind : std::uint8_t
+    {
+        whitespace,
+        comment,
+        star,
+        slash
+    };
+
+    // The four-byte study case, whose window \t*/\t no shorter window replaces: a budget of four cuts at 7 as the
+    // default does, and a budget of three or less tries no window that certifies and leaves the input one chunk.
+    Builder builder{};
+
+    builder.add_token(plus(any_of(Set{'\t'})), Token_kind::whitespace, 1);
+    builder.add_token(block_comment_regex(), Token_kind::comment, 1);
+    builder.add_token(text("*"), Token_kind::star, 2);
+    builder.add_token(text("/"), Token_kind::slash, 2);
+
+    const auto lexer{builder.build()};
+
+    const std::string input{"\t*/\t\t*/\t"};
+
+    EXPECT_EQ(lexer.chunk_boundaries_with_windows(input, 2, 4), (std::vector<std::size_t>{0, 7, input.size()}));
+
+    for (const auto longest : {0U, 1U, 2U, 3U})
+    {
+        EXPECT_EQ(lexer.chunk_boundaries_with_windows(input, 2, longest), (std::vector<std::size_t>{0, input.size()}))
+                << longest;
+    }
+
+    Window_planner narrower{3};
+
+    EXPECT_EQ(narrower.window_at(lexer.simulator(), input.begin(), input.size(), 0), std::nullopt);
+}
+
+TEST_F(Lexer_test, The_anchor_free_span_names_a_window_budget_of_five_where_four_leaves_its_gaps_open)
+{
+    enum class Token_kind : std::uint8_t
+    {
+        ba,
+        aba,
+        babb
+    };
+
+    // Over ba, aba and babb no byte certifies, the windows of two to four bytes that certify leave runs of ba
+    // anchor-free at any length, and those of two to five bound every anchor-free run at 4.
+    Builder builder{};
+
+    builder.add_token(text("ba"), Token_kind::ba, 1);
+    builder.add_token(text("aba"), Token_kind::aba, 1);
+    builder.add_token(text("babb"), Token_kind::babb, 1);
+
+    const auto lexer{builder.build()};
+
+    ASSERT_TRUE(certifies_no_byte(lexer));
+
+    const auto windows{words("ab", 5)};
+
+    const auto certified_through{[&](const std::size_t longest) {
+        std::vector<dfa::Certified_pair> certified{};
+
+        for (const auto& window : windows)
+        {
+            if (window.size() < Window_planner::shortest_window || window.size() > longest)
+            {
+                continue;
+            }
+
+            if (const auto origin{lexer.is_split_window(window)})
+            {
+                certified.push_back({.window = window, .origin = *origin});
+            }
+        }
+
+        return certified;
+    }};
+
+    EXPECT_EQ(lexer.anchor_free_span(certified_through(4)), std::nullopt);
+    EXPECT_EQ(lexer.anchor_free_span(certified_through(5)), 4U);
+
+    std::string input{};
+
+    for (int block{0}; block < 12; ++block)
+    {
+        input += "ba";
+    }
+
+    EXPECT_EQ(lexer.is_split_window("ababa"), 3U);
+
+    EXPECT_EQ(lexer.chunk_boundaries_with_windows(input, 2), (std::vector<std::size_t>{0, input.size()}));
+    EXPECT_EQ(lexer.chunk_boundaries_with_windows(input, 2, 5), (std::vector<std::size_t>{0, 16, input.size()}));
+}
+
 TEST_F(Lexer_test, Complete_c_like_grammar_windows_end_to_end)
 {
     enum class Token_kind : std::uint8_t
@@ -4444,9 +4627,9 @@ TEST_F(Lexer_test, Single_byte_core_planning_equals_the_walk_over_the_full_lengt
 
     const auto lexer{builder.build()};
 
-    // A single-byte core is the widest case of the candidate algebra: every occurrence proposes windows of all three
-    // lengths, and a repeated closer puts occurrences one byte apart, so neighboring occurrences propose the same
-    // window and the candidate stream carries duplicates through the heap's ordering.
+    // A single-byte core is the widest case of the candidate algebra: every occurrence lies in windows of all three
+    // lengths, and a repeated closer puts occurrences one byte apart, so neighboring occurrences lie in the same
+    // windows and the search must visit each start once.
     ASSERT_EQ(lexer.mandatory_core(), ";");
 
     ASSERT_TRUE(certifies_no_byte(lexer));
@@ -4494,7 +4677,7 @@ TEST_F(Lexer_test, Window_length_order_decides_the_cut_when_the_shortest_refuses
 
     // The region swallows 'x' bytes past its closer, so the two-byte window at an occurrence refuses while the three-
     // and four-byte windows certify with different origins. The plan is then decided by which length is tried first at
-    // the same position, which is exactly the ordering the heap must reproduce, every length tried and the shortest
+    // the same position, which is exactly the ordering the search must reproduce, every length tried and the shortest
     // first; the test pins the real cuts that ordering gives.
     ASSERT_EQ(lexer.mandatory_core(), ";");
 
@@ -4555,6 +4738,54 @@ TEST_F(Lexer_test, Window_length_order_decides_the_cut_when_the_shortest_refuses
     EXPECT_EQ(edge_plan, reference_window_walk(lexer, edge, 6));
 
     EXPECT_EQ(edge_plan, (std::vector<std::size_t>{0, 3, 6, 8, edge.size()}));
+}
+
+TEST_F(Lexer_test, A_window_budget_of_five_finds_a_core_window_the_default_of_four_misses)
+{
+    enum class Token_kind : std::uint8_t
+    {
+        identifier,
+        region,
+        whitespace,
+        operator_symbol
+    };
+
+    // The region grammar of the test above, whose region swallows 'x' bytes past its closer: on <@qqqq;xxx a the target
+    // 6 lands on the closer, and the only certified windows beginning there or later are ;xxx<space> and ;xxx<space>a,
+    // five and six bytes long, at origins 4 and 5, so the search over the core cuts at 10 under a budget of five and
+    // finds nothing under the default of four.
+    Builder builder{};
+
+    builder.add_token(identifier_regex(), Token_kind::identifier, 2);
+    builder.add_token(
+            concat(text("<@"), kleene(any_of(Set::all() - Set{';'})), text(";"), kleene(any_of(Set{'x'}))),
+            Token_kind::region, 1);
+    builder.add_token(plus(any_of(Set::whitespace() + '\n')), Token_kind::whitespace, 1);
+
+    for (const std::string_view op : {";", "<", "@"})
+    {
+        builder.add_token(text(op), Token_kind::operator_symbol, 3);
+    }
+
+    const auto lexer{builder.build()};
+
+    ASSERT_EQ(lexer.mandatory_core(), ";");
+
+    ASSERT_TRUE(certifies_no_byte(lexer));
+
+    const std::string input{"<@qqqq;xxx a"};
+
+    const auto by_default{lexer.chunk_boundaries_with_windows(input, 2)};
+
+    const auto wider{lexer.chunk_boundaries_with_windows(input, 2, 5)};
+
+    EXPECT_EQ(by_default, reference_window_walk(lexer, input, 2));
+    EXPECT_EQ(wider, reference_window_walk(lexer, input, 2, 5));
+
+    EXPECT_EQ(by_default, (std::vector<std::size_t>{0, input.size()}));
+    EXPECT_EQ(wider, (std::vector<std::size_t>{0, 10, input.size()}));
+
+    expect_rejoined_equals_serial<Token_kind>(lexer, input, wider);
 }
 
 TEST_F(Lexer_test, Window_walk_advances_past_the_previous_cut)
@@ -4624,7 +4855,7 @@ TEST_F(Lexer_test, Window_walk_defers_to_a_certified_byte_even_when_the_input_la
     EXPECT_EQ(window_plan, (std::vector<std::size_t>{0, input.size()}));
 }
 
-TEST_F(Lexer_test, Self_overlapping_core_planning_equals_the_walk_through_duplicate_candidates)
+TEST_F(Lexer_test, Self_overlapping_core_planning_equals_the_walk_over_occurrences_one_byte_apart)
 {
     enum class Token_kind : std::uint8_t
     {
@@ -4653,11 +4884,9 @@ TEST_F(Lexer_test, Self_overlapping_core_planning_equals_the_walk_through_duplic
 
     const auto lexer{builder.build()};
 
-    // A doubled-byte closer overlaps itself, so a star run holds occurrences one byte apart and neighboring occurrences
-    // propose the same length-four window: the candidate stream carries duplicates the committed block-comment corpus
-    // can never produce. Duplicates share their memoized verdict, so no final plan can see whether the skip fired; what
-    // this run pins is that overlap-heavy proposal generation still equals the walk, and that the skip drops nothing it
-    // should keep.
+    // A doubled-byte closer overlaps itself, so a star run holds occurrences one byte apart, neighboring occurrences in
+    // the same length-four window, which the committed block-comment corpus can never produce. This run pins that the
+    // search over such overlapping occurrences still equals the walk.
     ASSERT_EQ(lexer.mandatory_core(), "**");
 
     ASSERT_TRUE(certifies_no_byte(lexer));
@@ -5886,21 +6115,21 @@ TEST_F(Lexer_test, Container_concepts_require_common_const_ranges)
     // refusals, so no single overload can lose its constraint behind the others.
     static_assert(
             Single_scan_over<std::string> && Full_scan_over<std::string> && Byte_plan_over<std::string> &&
-            Window_plan_over<std::string> && Parallel_scan_over<std::string>);
+            Window_plan_over<std::string> && Window_budget_plan_over<std::string> && Parallel_scan_over<std::string>);
 
     static_assert(
             !Single_scan_over<std::vector<double>> && !Full_scan_over<std::vector<double>> &&
             !Byte_plan_over<std::vector<double>> && !Window_plan_over<std::vector<double>> &&
-            !Parallel_scan_over<std::vector<double>>);
+            !Window_budget_plan_over<std::vector<double>> && !Parallel_scan_over<std::vector<double>>);
 
     static_assert(
             !Single_scan_over<std::vector<std::string>> && !Full_scan_over<std::vector<std::string>> &&
             !Byte_plan_over<std::vector<std::string>> && !Window_plan_over<std::vector<std::string>> &&
-            !Parallel_scan_over<std::vector<std::string>>);
+            !Window_budget_plan_over<std::vector<std::string>> && !Parallel_scan_over<std::vector<std::string>>);
 
     static_assert(
             !Single_scan_over<Two_faced> && !Full_scan_over<Two_faced> && !Byte_plan_over<Two_faced> &&
-            !Window_plan_over<Two_faced> && !Parallel_scan_over<Two_faced>);
+            !Window_plan_over<Two_faced> && !Window_budget_plan_over<Two_faced> && !Parallel_scan_over<Two_faced>);
 
     using Good_iterator = std::string_view::iterator;
     using Bad_iterator = std::vector<double>::const_iterator;
@@ -5908,12 +6137,12 @@ TEST_F(Lexer_test, Container_concepts_require_common_const_ranges)
     static_assert(
             Single_scan_through<Good_iterator> && Full_scan_through<Good_iterator> &&
             Byte_plan_through<Good_iterator> && Window_plan_through<Good_iterator> &&
-            Parallel_scan_through<Good_iterator>);
+            Window_budget_plan_through<Good_iterator> && Parallel_scan_through<Good_iterator>);
 
     static_assert(
             !Single_scan_through<Bad_iterator> && !Full_scan_through<Bad_iterator> &&
             !Byte_plan_through<Bad_iterator> && !Window_plan_through<Bad_iterator> &&
-            !Parallel_scan_through<Bad_iterator>);
+            !Window_budget_plan_through<Bad_iterator> && !Parallel_scan_through<Bad_iterator>);
 
     // The library scanners beneath the Lexer hold the same line.
     static_assert(Dfa_run_through<Good_iterator> && !Dfa_run_through<Bad_iterator>);

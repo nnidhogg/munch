@@ -444,8 +444,34 @@ one origin from where a token may begin, beside the states every other hypothesi
 candidates, and a shortest window can be far longer than the state count: on a family of 69 states it is 2,531 bytes,
 and over that family it grows faster than any polynomial in the states. The search holds at most (n + 2) 2^(n - 1) nodes
 over n live states, a shortest window is shorter than that, and whether a certified window exists is PSPACE-complete, so
-the search takes a budget of nodes and reports running out as such. A grammar whose shortest window is longer than
-`chunk_boundaries_with_windows()` tries, four bytes, gains nothing from that planner, and this is how to tell.
+the search takes a budget of nodes and reports running out as such. A grammar whose shortest window is longer than the
+window budget of `chunk_boundaries_with_windows()`, four bytes unless the call names another, gains nothing from that
+planner at that budget, and this is how to tell.
+
+`chunk_boundaries_with_windows(input, chunks, longest)` plans as `chunk_boundaries_with_windows(input, chunks)` does,
+with windows of two to `longest` bytes, the window budget, in place of two to four. A budget above four finds windows
+that four bytes miss, at the cost of a decision for each further window tried, and one under two tries no window. The
+budget a token set needs is the anchor-free span's question: over an inventory of windows of two to `longest` bytes that
+`is_split_window()` certifies, each at the origin it reports, `anchor_free_span(inventory)` is the longest run of
+positions a completely tokenizable input can carry with no anchor of the inventory, so when it is bounded every longer
+run holds one, and the windows the planner tries at that budget include every window of the inventory. The smallest
+budget for which such an inventory's span is bounded, when there is one, is the width that closes the token set's
+longest gap. Over the tokens ba, aba and babb no byte certifies, the windows of two to four bytes over a and b that
+certify leave the span unbounded, since no window of a run of ba is among them, and those of two to five bound it at 4:
+
+```cpp
+builder.add_token(text("ba"), Token::Ba, 1);
+builder.add_token(text("aba"), Token::Aba, 1);
+builder.add_token(text("babb"), Token::Babb, 1);
+
+const auto lexer{builder.build()};
+
+const std::string input{"babababababababababababa"};  // ba twelve times
+
+lexer.is_split_window("ababa");                      // 3: the token holding its last a begins at its last b
+lexer.chunk_boundaries_with_windows(input, 2);       // {0, 24}: no window of up to four bytes in it certifies
+lexer.chunk_boundaries_with_windows(input, 2, 5);    // {0, 16, 24}: ababa at 13 cuts at its origin
+```
 
 `window_counterexample(window, origin)` holds the certificate itself against every completely tokenizable input. A
 counterexample is such an input holding an occurrence of the window whose covering token begins elsewhere than the

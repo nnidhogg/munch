@@ -8,12 +8,10 @@
 #include <limits>
 #include <map>
 #include <optional>
-#include <queue>
 #include <ranges>
 #include <string>
 #include <string_view>
 #include <utility>
-#include <vector>
 
 #include "munch/common/concepts.hpp"
 #include "munch/dfa/simulator.hpp"
@@ -25,19 +23,34 @@ namespace munch::core
  * @brief The window search behind Lexer::chunk_boundaries_with_windows() and next_certified_evidence(): where in an
  *        input a certified split window first licenses a cut.
  *
- * One planner lives for one plan and holds that plan's state alone, the memo and the barren offset; the token set is
- * handed in with each question, so the planner owns nothing it could outlive. It memoizes every window decision by byte
- * string, so the decisions, the costly part, are bounded by the distinct windows tried while the positional walks scale
- * with the positions examined; and when the token set proved a mandatory core it searches only where the core occurs,
- * tightening the barren offset across calls so that targets falling in a tail already proved occurrence-free refuse
- * without rescanning it. Byte certificates are not its business: the callers decide when windows are consulted at all.
+ * One planner lives for one plan and holds that plan's state alone, the window budget, the memo and the barren offset;
+ * the token set is handed in with each question, so the planner owns nothing it could outlive. It memoizes every window
+ * decision by byte string, so the decisions, the costly part, are bounded by the distinct windows tried while the
+ * positional walks scale with the positions examined; and when the token set proved a mandatory core it searches only
+ * where the core occurs, tightening the barren offset across calls so that targets falling in a tail already proved
+ * occurrence-free refuse without rescanning it. Byte certificates are not its business: the callers decide when windows
+ * are consulted at all.
  */
 class Window_planner
 {
 public:
     /**
-     * @brief Returns the first window beginning at a position that certifies: lengths ascending from two, first
-     *        certificate wins.
+     * @brief Constructs a planner whose searches try windows of two to four bytes, longest_window.
+     */
+    Window_planner() = default;
+
+    /**
+     * @brief Constructs a planner whose searches try windows of two to the given number of bytes, the window budget.
+     *
+     * A budget above four lets the searches find windows the default misses, at the cost of a decision for each further
+     * window tried; under two no window is tried and every search finds nothing.
+     * @param longest The longest window the searches try, in bytes.
+     */
+    explicit Window_planner(std::size_t longest) noexcept;
+
+    /**
+     * @brief Returns the first window beginning at a position that certifies: lengths ascending from two to the budget,
+     *        first certificate wins.
      * @tparam Iterator Random access iterator type.
      * @param simulator The token set the plan is for.
      * @param begin Iterator to the beginning of the input.
@@ -50,7 +63,7 @@ public:
     [[nodiscard]] std::optional<std::pair<std::size_t, std::size_t>> window_at(
             const dfa::Simulator& simulator, Iterator begin, const std::size_t size, const std::size_t at)
     {
-        const auto limit{at < size ? std::min(longest_window, size - at) : 0UZ};
+        const auto limit{at < size ? std::min(longest_, size - at) : 0UZ};
 
         for (auto length{shortest_window}; length <= limit; ++length)
         {
@@ -96,8 +109,8 @@ public:
     static constexpr std::size_t shortest_window{2};
 
     /**
-     * @brief The longest window the searches try, four bytes. A grammar needing longer windows degrades to fewer
-     *        chunks, never to an unsafe cut.
+     * @brief The longest window the searches try unless the planner is constructed with another budget, four bytes. A
+     *        grammar needing longer windows than the budget degrades to fewer chunks, never to an unsafe cut.
      */
     static constexpr std::size_t longest_window{4};
 
@@ -192,14 +205,13 @@ private:
      *        candidates exist only where the core occurs, and visiting them in the exhaustive walk's own
      *        position-then-length order gives that walk's plan, refusals included.
      *
-     * Positions are still scanned one by one, but for a byte comparison each; windows are built and certified only at
-     * occurrences. A proved core longer than the longest window minus its trailing byte admits no candidate at all, so
-     * every target refuses at once, exactly as the exhaustive walk would conclude after scanning to the end of the
-     * input.
-     *
-     * A window of length in (m, longest] starting at t holds the m-byte core occurring at c, plus a byte after it,
-     * exactly when t lies in [c + m + 1 - length, c]; an occurrence starting past t + longest - m - 1 for the start t
-     * of the heap's least pair therefore contributes no smaller pair.
+     * Positions are still scanned one by one, but for a byte comparison each; windows are built and certified only near
+     * occurrences. A start's candidates are the windows holding the first core occurrence at or after it plus a byte,
+     * the lengths from c + m + 1 - t to the budget for the m-byte core at c and the start t, so visiting the starts
+     * ascending and each start's lengths ascending is the exhaustive walk's own order, and a start more than the budget
+     * minus m + 1 bytes before every occurrence has no candidate. A proved core longer than the budget minus its
+     * trailing byte admits no candidate at all, so every target refuses at once, exactly as the exhaustive walk would
+     * conclude after scanning to the end of the input.
      * @tparam Iterator Random access iterator type.
      * @param simulator The token set the plan is for.
      * @param begin Iterator to the beginning of the input.
@@ -213,7 +225,7 @@ private:
     {
         const auto core{simulator.mandatory_core()};
 
-        if (core.size() + 1 > longest_window || floor >= barren_)
+        if (core.size() + 1 > longest_ || floor >= barren_)
         {
             return std::nullopt;
         }
@@ -245,84 +257,44 @@ private:
             return std::nullopt;
         }};
 
-        using Pair_t = std::pair<std::size_t, std::size_t>;
+        std::size_t settled{floor};
 
-        std::priority_queue<Pair_t, std::vector<Pair_t>, std::greater<>> heap{};
+        // Each start's candidate lengths run from the shortest window holding its first occurrence plus a byte to the
+        // budget, so visiting starts ascending and lengths ascending is the exhaustive walk's own order.
+        while (const auto at{next_occurrence()})
+        {
+            const auto reach{*at + core.size() + 1};
 
-        const auto ingest{[&](const std::size_t at) {
-            for (auto length{core.size() + 1}; length <= longest_window; ++length)
+            const auto lowest{reach > longest_ ? reach - longest_ : std::size_t{0}};
+
+            for (auto start{std::max(settled, lowest)}; start <= *at; ++start)
             {
-                const auto lowest{at + core.size() + 1 > length ? at + core.size() + 1 - length : std::size_t{0}};
+                const auto limit{std::min(longest_, size - start)};
 
-                for (auto t{std::max(floor, lowest)}; t <= at && t + length <= size; ++t)
+                for (auto length{reach - start}; length <= limit; ++length)
                 {
-                    heap.emplace(t, length);
+                    if (const auto origin{certified_origin(simulator, begin, start, length)})
+                    {
+                        return start + *origin;
+                    }
                 }
             }
-        }};
 
-        auto pending{next_occurrence()};
-
-        std::optional<std::pair<std::size_t, std::size_t>> last{};
-
-        const auto pending_contributes{[&] {
-            if (!pending)
-            {
-                return false;
-            }
-
-            if (heap.empty())
-            {
-                return true;
-            }
-
-            const auto [least_start, least_length]{heap.top()};
-
-            const auto horizon{least_start + longest_window - core.size() - 1};
-
-            return *pending <= horizon;
-        }};
-
-        // A pop waits until no unread occurrence can still contribute a smaller pair; overlapping occurrences propose
-        // duplicate pairs, which pop adjacently and are skipped.
-        while (true)
-        {
-            while (pending_contributes())
-            {
-                ingest(*pending);
-
-                pending = next_occurrence();
-            }
-
-            if (heap.empty())
-            {
-                return std::nullopt;
-            }
-
-            const auto candidate{heap.top()};
-
-            heap.pop();
-
-            if (last == std::optional{candidate})
-            {
-                continue;
-            }
-
-            last = candidate;
-
-            const auto [start, length]{candidate};
-
-            if (const auto origin{certified_origin(simulator, begin, start, length)})
-            {
-                return start + *origin;
-            }
+            settled = *at + 1;
         }
+
+        return std::nullopt;
     }
 
     /**
      * @brief The window decisions made so far, by byte string.
      */
     Memo_t memo_;
+
+    /**
+     * @brief The longest window the searches try, the window budget.
+     */
+    std::size_t longest_{longest_window};
 
     /**
      * @brief The offset at or after which no core occurrence begins, tightened by a scan that drains the input.

@@ -520,6 +520,47 @@ public:
     [[nodiscard]] std::vector<std::size_t> chunk_boundaries_with_windows(
             Iterator begin, Iterator end, const std::size_t chunks) const
     {
+        return chunk_boundaries_with_windows(begin, end, chunks, Window_planner::longest_window);
+    }
+
+    /**
+     * @brief Computes chunk_boundaries_with_windows(begin, end, chunks) over a whole container.
+     * @tparam Container The input container type (must offer random access).
+     * @param container The input container.
+     * @param chunks As for the iterator form above.
+     * @return As for the iterator form above.
+     */
+    template <common::concepts::Random_access_byte_iterable Container>
+    [[nodiscard]] std::vector<std::size_t> chunk_boundaries_with_windows(
+            const Container& container, const std::size_t chunks) const
+    {
+        return chunk_boundaries_with_windows(std::ranges::begin(container), std::ranges::end(container), chunks);
+    }
+
+    /**
+     * @brief Computes chunk_boundaries_with_windows(begin, end, chunks) with windows of two to a given number of bytes,
+     *        the window budget, in place of two to four.
+     *
+     * A budget above four finds windows that four bytes miss, at the cost of a decision for each further window tried,
+     * and one under two tries no window, which leaves the single whole-input chunk where no byte certifies.
+     *
+     * The budget a token set needs is anchor_free_span()'s question. Over an inventory of windows of two to the
+     * budget's bytes that is_split_window() certifies, each at the origin it reports, the span is the longest run of
+     * positions a completely tokenizable input can carry with no anchor of the inventory, so when it is bounded every
+     * longer run holds one, and the windows this walk tries include every window of the inventory. The smallest budget
+     * for which such an inventory's span is bounded, when there is one, is the width that closes the token set's
+     * longest gap.
+     * @tparam Iterator Random access iterator type.
+     * @param begin Iterator to the beginning of the input.
+     * @param end Iterator to the end of the input.
+     * @param chunks The number of chunks aimed for; fewer result when neither certificate offers cuts.
+     * @param longest The longest window the walk tries, in bytes, the window budget.
+     * @return Offsets from 0 to the input size inclusive; adjacent pairs delimit the chunks.
+     */
+    template <common::concepts::Random_access_byte_iterator Iterator>
+    [[nodiscard]] std::vector<std::size_t> chunk_boundaries_with_windows(
+            Iterator begin, Iterator end, const std::size_t chunks, const std::size_t longest) const
+    {
         if (simulator_.has_split_points())
         {
             return chunk_boundaries(begin, end, chunks);
@@ -533,7 +574,7 @@ public:
 
         Division_targets targets{size, usable};
 
-        Window_planner planner{};
+        Window_planner planner{longest};
 
         for (std::size_t index{1}; index < usable; ++index)
         {
@@ -553,17 +594,19 @@ public:
     }
 
     /**
-     * @brief Computes chunk_boundaries_with_windows(begin, end, chunks) over a whole container.
+     * @brief Computes chunk_boundaries_with_windows(begin, end, chunks, longest) over a whole container.
      * @tparam Container The input container type (must offer random access).
      * @param container The input container.
      * @param chunks As for the iterator form above.
+     * @param longest As for the iterator form above.
      * @return As for the iterator form above.
      */
     template <common::concepts::Random_access_byte_iterable Container>
     [[nodiscard]] std::vector<std::size_t> chunk_boundaries_with_windows(
-            const Container& container, const std::size_t chunks) const
+            const Container& container, const std::size_t chunks, const std::size_t longest) const
     {
-        return chunk_boundaries_with_windows(std::ranges::begin(container), std::ranges::end(container), chunks);
+        return chunk_boundaries_with_windows(
+                std::ranges::begin(container), std::ranges::end(container), chunks, longest);
     }
 
     /**
