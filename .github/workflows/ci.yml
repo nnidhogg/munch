@@ -1,9 +1,9 @@
 name: CI
 
 # The work CI, on every push to master and every pull request into it: formatting, the commits the documentation names,
-# the generated tables, the bundled grammars against their generators, the strict GCC, Clang, ARM64 and CMake floor
-# builds with the whole test suite, and the install and subdirectory consumers. Coverage, the sanitizers and the long
-# fuzz runs are the release CI, in release-ci.yml.
+# the width of the Python lines, the generated tables, the bundled grammars against their generators, the strict GCC,
+# Clang, ARM64 and CMake floor builds with the whole test suite, and the install and subdirectory consumers. Coverage,
+# the sanitizers and the long fuzz runs are the release CI, in release-ci.yml.
 on:
   push:
     branches: [ "master" ]
@@ -46,6 +46,19 @@ jobs:
 
       - name: Check the commits the documentation names
         run: tools/check_doc_commits.sh
+
+  python-line-check:
+    runs-on: ubuntu-24.04
+
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Check the Python lines are at most 120 columns
+        run: tools/check_python_lines.sh
 
   build-and-test-clang:
     runs-on: ubuntu-24.04

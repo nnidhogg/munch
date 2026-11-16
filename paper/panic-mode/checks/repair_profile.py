@@ -21,7 +21,7 @@ What it checks, exiting nonzero on any disagreement:
   - every decision against a brute-force enumeration of all repairs up to a length bound, scanned by a reference
     maximal-munch scanner written here, over random partial automata and random literal vocabularies;
   - the tight families at every state count up to a bound, by brute force at the small counts;
-  - the three-token basis example, including that its three repairs are the only reaching behaviours;
+  - the three-token basis example, including that its three repairs are the only reaching behaviors;
   - the shipped routines, transcribed from libs/dfa/src/recovery.cpp, against the h = m case of the construction, an
     accepting start unrolled first as the library's Simulator does it, and the empty tail's trivial answers.
 
@@ -511,7 +511,7 @@ def main():
     checker = Checker()
     macros = {}
 
-    # The basis example: three literal tokens, three reaching behaviours, two needed at one endpoint, three at all.
+    # The basis example: three literal tokens, three reaching behaviors, two needed at one endpoint, three at all.
     basis_tokens = ['a', 'bb', 'bbb']
     basis_tail = 'bbba'
     basis_bound = 8
@@ -524,7 +524,7 @@ def main():
             observed.setdefault((e, starts), r)
     representatives = {(analyzer.terminal[d], analyzer.starts(d)): r for (r, d) in reversed(analyzer.scenarios)}
     if set(observed) != set(representatives) or len(observed) != 3:
-        checker.fail(('basis example behaviours', sorted(observed)))
+        checker.fail(('basis example behaviors', sorted(observed)))
     types = sorted(representatives.items(), key=lambda item: (-item[0][0], len(item[1])))
     with open(os.path.join(outdir, 'basis-types.tex'), 'w', newline='\n') as out:
         for (e, starts), r in types:

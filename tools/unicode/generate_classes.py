@@ -16,7 +16,8 @@ regex-syntax version that logos is locked to was generated from, whatever the li
 set is the scanner's, and a class is part of it. Pass --version to require the database to be a given version,
 which is how the two are kept from drifting into each other's file.
 
-Usage: tools/unicode/generate_classes.py [--version X.Y.Z] <DerivedCoreProperties.txt> <PropList.txt> <DerivedGeneralCategory.txt> [output.inc]
+Usage: tools/unicode/generate_classes.py [--version X.Y.Z] <DerivedCoreProperties.txt> <PropList.txt>
+                                         <DerivedGeneralCategory.txt> [output.inc]
 """
 
 import hashlib
@@ -149,8 +150,8 @@ def main() -> None:
     )
 
     output.write_text(
-        header + emit_array("decimal_digit_ranges", decimal_digit) + "\n" + emit_array("white_space_ranges", white_space)
-        + "\n" + emit_array("word_ranges", word),
+        header + emit_array("decimal_digit_ranges", decimal_digit) + "\n"
+        + emit_array("white_space_ranges", white_space) + "\n" + emit_array("word_ranges", word),
         encoding="utf-8",
         newline="\n",
     )

@@ -892,9 +892,13 @@ def main():
     out.append("A second independent run, extending the one recorded in `RESULTS.md` and sharing nothing")
     out.append("with the campaign harness in the munch tree. The ground truth is again `reference.py`, the")
     out.append("from-scratch maximal-munch model, which agreed with munch's own scan on all 1444612 strings")
-    out.append("the first run put to it. `crosscheck_anchor.cpp` is `crosscheck_scan.cpp` widened with two commands, for")
+    out.append(
+        "the first run put to it. `crosscheck_anchor.cpp` is `crosscheck_scan.cpp` widened with two commands, for"
+    )
     out.append("`Lexer::next_anchored_start()` and `Lexer::minimal_repair()`; it asserts nothing.")
-    out.append("`crosscheck_anchor.py` owns every verdict and reuses `crosscheck_scan.py`'s claim 1 and claim 2 logic verbatim")
+    out.append(
+        "`crosscheck_anchor.py` owns every verdict and reuses `crosscheck_scan.py`'s claim 1 and claim 2 logic verbatim"
+    )
     out.append("for part 2.")
     out.append("")
     out.append("Every quantifier below is bounded, while the contracts quantify over repairs of unbounded")
@@ -908,7 +912,8 @@ def main():
     out.append("## Part 1: the anchored machinery, under exhaustive negative testing")
     out.append("")
     out.append(
-        "For every (token set, input, anchor) of `crosscheck_scan.py`'s enumeration, being the %d token sets," % len(base_sets)
+        "For every (token set, input, anchor) of `crosscheck_scan.py`'s enumeration, being the %d token sets,"
+        % len(base_sets)
     )
     out.append("every input of length at most %d over the token alphabet plus the pad byte '#', and every" % MAX_INPUT)
     out.append("anchor from 0 to the input's length:")
