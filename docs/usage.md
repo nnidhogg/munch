@@ -444,20 +444,24 @@ one origin from where a token may begin, beside the states every other hypothesi
 candidates, and a shortest window can be far longer than the state count: on a family of 69 states it is 2,531 bytes,
 and over that family it grows faster than any polynomial in the states. The search holds at most (n + 2) 2^(n - 1) nodes
 over n live states, a shortest window is shorter than that, and whether a certified window exists is PSPACE-complete, so
-the search takes a budget of nodes and reports running out as such. A grammar whose shortest window is longer than the
-window budget of `chunk_boundaries_with_windows()`, four bytes unless the call names another, gains nothing from that
-planner at that budget, and this is how to tell.
+the search takes a budget of nodes and reports running out as such. For a grammar whose shortest window is longer than
+the window budget of `chunk_boundaries_with_windows()`, four bytes unless the call names another, that planner adds no
+cut through a window at that budget and its byte cuts remain, and this is how to tell.
 
 `chunk_boundaries_with_windows(input, chunks, longest)` plans as `chunk_boundaries_with_windows(input, chunks)` does,
 with windows of two to `longest` bytes, the window budget, in place of two to four. A budget above four finds windows
-that four bytes miss, at the cost of a decision for each further window tried, and one under two tries no window. The
-budget a token set needs is the anchor-free span's question: over an inventory of windows of two to `longest` bytes that
-`is_split_window()` certifies, each at the origin it reports, `anchor_free_span(inventory)` is the longest run of
+that four bytes miss, at the cost of one certification per new distinct spelling, and one under two tries no window. The
+planner behind both forms, `core::Window_planner` of `munch/core/window_planner.hpp`, takes the budget in its
+constructor, `Window_planner(longest)`, and is constructed without one at `Window_planner::longest_window`, four bytes.
+The budget a token set needs is the anchor-free span's question: over an inventory of windows of two to `longest` bytes
+that `is_split_window()` certifies, each at the origin it reports, `anchor_free_span(inventory)` is the longest run of
 positions a completely tokenizable input can carry with no anchor of the inventory, so when it is bounded every longer
-run holds one, and the windows the planner tries at that budget include every window of the inventory. The smallest
-budget for which such an inventory's span is bounded, when there is one, is the width that closes the token set's
-longest gap. Over the tokens ba, aba and babb no byte certifies, the windows of two to four bytes over a and b that
-certify leave the span unbounded, since no window of a run of ba is among them, and those of two to five bound it at 4:
+run of such an input holds one. When no byte certifies, every inventory window is eligible, within the window budget,
+but at each target the planner tries the starts at or beyond its floor and stops at the first certificate, so a plan can
+pass over anchors. The smallest budget for which such an inventory's span is bounded, when there is one, is the width
+that closes the token set's longest gap. Over the tokens ba, aba and babb no byte certifies, the windows of two to four
+bytes over a and b that certify leave the span unbounded, since no window of a run of ba is among them, and those of two
+to five bound it at 4:
 
 ```cpp
 builder.add_token(text("ba"), Token::Ba, 1);
@@ -886,18 +890,18 @@ list of tokens is the encoder's segmentation of its spelling exactly when every 
 spelling and so is every adjacent pair. A run of consecutive tokens of a segmentation is then the segmentation of its
 own spelling, so a miscovering, when there is one, is spelled by the tokens over one occurrence of the window with
 nothing on either side, and it is at most 2L + |window| - 2 bytes long, L the longest token. The decision searches those
-runs: a token holding the whole window, unless it holds it at its start and the origin is zero, or a first token whose
-tail spells the start of the window, then tokens inside the window, then a last token that contains the window's final
-byte and begins anywhere but at the origin. Which token may follow which is read off the token automaton of Berglund,
-Martens and van der Merwe (Theoretical Computer Science 2026, by Theorem 1, Corollary 2 and Algorithm 2 of its preprint
-arXiv:2405.07671v2), in which a token enters the same state wherever it is read, so a node of the search is that state
-with the number of the window's bytes spelled so far, each node is expanded once, and the search stops at the first
-miscovering. The automaton has one base state plus one per merge whose product can be read, and on a large table
-building it costs far more than a decision on it, so a caller deciding many windows builds it once; the search then
-reads every token against the window and explores at most |window| - 1 nodes per state. `Token_automaton::state_count()`
-counts the states, and `allowed_tokens(state)` lists the tokens a state may read, ascending, those
-`is_allowed(state, token)` admits. The miscovering returned is the encoder's segmentation of the first string the search
-finds, not necessarily the shortest, and a table `merge_tower()` refuses is refused the same way:
+runs: a token holding the whole window, unless the window occurs only at the token's start and the origin is zero, or a
+first token whose tail spells the start of the window, then tokens inside the window, then a last token that contains
+the window's final byte and begins anywhere but at the origin. Which token may follow which is read off the token
+automaton of Berglund, Martens and van der Merwe (Theoretical Computer Science 2026, by Theorem 1, Corollary 2 and
+Algorithm 2 of its preprint arXiv:2405.07671v2), in which a token enters the same state wherever it is read, so a node
+of the search is that state with the number of the window's bytes spelled so far, each node is expanded once, and the
+search stops at the first miscovering. The automaton has one base state plus one per merge whose product can be read,
+and on a large table building it costs far more than a decision on it, so a caller deciding many windows builds it once;
+the search then reads every token against the window and explores at most |window| - 1 nodes per state.
+`Token_automaton::state_count()` counts the states, and `allowed_tokens(state)` lists the tokens a state may read,
+ascending, those `is_allowed(state, token)` admits. The miscovering returned is the encoder's segmentation of the first
+string the search finds, not necessarily the shortest, and a table `merge_tower()` refuses is refused the same way:
 
 ```cpp
 #include "munch/verifier/token_automaton.hpp"

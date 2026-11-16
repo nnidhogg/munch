@@ -299,12 +299,13 @@ private:
  * relation assumes a projective encoder, for which the theorem holds.
  *
  * The search runs over nodes (state, k), the state the last token entered and the number of the window's bytes spelled
- * so far. A token holding the whole window is a miscovering by itself, unless it holds it at its start and the origin
- * is zero. A token whose spelling ends with the window's first k bytes, k short of the window's length, seeds the node
- * of its state at k. A node takes every token that may follow its state and spells the window's next bytes short of its
- * last, entering the node of the token's state further on, and, when k is not the origin, ends the search at the first
- * token that may follow its state and begins with the rest of the window, since that token contains the final byte and
- * begins at k. Nodes are interned and expanded on demand, and the search stops at the first miscovering.
+ * so far. A token holding the whole window is a miscovering by itself, unless the window occurs only at the token's
+ * start and the origin is zero. A token whose spelling ends with the window's first k bytes, k short of the window's
+ * length, seeds the node of its state at k. A node takes every token that may follow its state and spells the window's
+ * next bytes short of its last, entering the node of the token's state further on, and, when k is not the origin, ends
+ * the search at the first token that may follow its state and begins with the rest of the window, since that token
+ * contains the final byte and begins at k. Nodes are interned and expanded on demand, and the search stops at the first
+ * miscovering.
  *
  * A decision reads every token's spelling against the window, O(|V| L |window|) byte comparisons for V the tokens, and
  * explores at most (|window| - 1) |Q| nodes, Q the automaton's states, each with at most |window| - 2 adjacency tests

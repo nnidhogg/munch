@@ -248,10 +248,10 @@ public:
      * @brief Finds a shortest window is_split_window() certifies, with its origin, exactly rather than by trying
      *        candidates; or the proof that the model certifies no window of any length; or a budget run out.
      *
-     * Its window may be much longer than the state count, and a grammar whose shortest window is longer than
-     * chunk_boundaries_with_windows() tries gains nothing from that planner. A found window is conditional on
-     * occurrence like every window certificate, which window_occurrence() settles. The derivation is
-     * dfa::shortest_split_window()'s.
+     * Its window may be much longer than the state count, and for a grammar whose shortest window is longer than the
+     * window budget of chunk_boundaries_with_windows(), four bytes unless the call names another, that planner adds no
+     * cut through a window at that budget and its byte cuts remain. A found window is conditional on occurrence like
+     * every window certificate, which window_occurrence() settles. The derivation is dfa::shortest_split_window()'s.
      * @param budget The most search nodes visited before the search gives up, dfa::shortest_window_budget unless told.
      * @return The window and its origin, Outcome::none when none exists, or Outcome::budget.
      */
@@ -541,15 +541,16 @@ public:
      * @brief Computes chunk_boundaries_with_windows(begin, end, chunks) with windows of two to a given number of bytes,
      *        the window budget, in place of two to four.
      *
-     * A budget above four finds windows that four bytes miss, at the cost of a decision for each further window tried,
-     * and one under two tries no window, which leaves the single whole-input chunk where no byte certifies.
+     * A budget above four finds windows that four bytes miss, at the cost of one certification per new distinct
+     * spelling, and one under two tries no window, which leaves the single whole-input chunk where no byte certifies.
      *
      * The budget a token set needs is anchor_free_span()'s question. Over an inventory of windows of two to the
      * budget's bytes that is_split_window() certifies, each at the origin it reports, the span is the longest run of
      * positions a completely tokenizable input can carry with no anchor of the inventory, so when it is bounded every
-     * longer run holds one, and the windows this walk tries include every window of the inventory. The smallest budget
-     * for which such an inventory's span is bounded, when there is one, is the width that closes the token set's
-     * longest gap.
+     * longer run of such an input holds one. When no byte certifies, every inventory window is eligible, within the
+     * window budget, but at each target this walk tries the starts at or beyond its floor and stops at the first
+     * certificate, so a plan can pass over anchors. The smallest budget for which such an inventory's span is bounded,
+     * when there is one, is the width that closes the token set's longest gap.
      * @tparam Iterator Random access iterator type.
      * @param begin Iterator to the beginning of the input.
      * @param end Iterator to the end of the input.

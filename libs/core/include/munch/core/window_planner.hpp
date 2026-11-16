@@ -42,8 +42,8 @@ public:
     /**
      * @brief Constructs a planner whose searches try windows of two to the given number of bytes, the window budget.
      *
-     * A budget above four lets the searches find windows the default misses, at the cost of a decision for each further
-     * window tried; under two no window is tried and every search finds nothing.
+     * A budget above four lets the searches find windows the default misses, at the cost of one certification per new
+     * distinct spelling; under two no window is tried and every search finds nothing.
      * @param longest The longest window the searches try, in bytes.
      */
     explicit Window_planner(std::size_t longest) noexcept;
@@ -110,7 +110,8 @@ public:
 
     /**
      * @brief The longest window the searches try unless the planner is constructed with another budget, four bytes. A
-     *        grammar needing longer windows than the budget degrades to fewer chunks, never to an unsafe cut.
+     *        grammar needing longer windows than the budget degrades to fewer chunks, never to a cut that is unsafe on
+     *        a completely tokenizable input.
      */
     static constexpr std::size_t longest_window{4};
 
@@ -205,13 +206,13 @@ private:
      *        candidates exist only where the core occurs, and visiting them in the exhaustive walk's own
      *        position-then-length order gives that walk's plan, refusals included.
      *
-     * Positions are still scanned one by one, but for a byte comparison each; windows are built and certified only near
-     * occurrences. A start's candidates are the windows holding the first core occurrence at or after it plus a byte,
-     * the lengths from c + m + 1 - t to the budget for the m-byte core at c and the start t, so visiting the starts
-     * ascending and each start's lengths ascending is the exhaustive walk's own order, and a start more than the budget
-     * minus m + 1 bytes before every occurrence has no candidate. A proved core longer than the budget minus its
-     * trailing byte admits no candidate at all, so every target refuses at once, exactly as the exhaustive walk would
-     * conclude after scanning to the end of the input.
+     * Positions are still scanned one by one, each compared with the core, a comparison that may examine the whole
+     * core; windows are built and certified only near occurrences. A start's candidates are the windows holding the
+     * first core occurrence at or after it plus a byte, the lengths from c + m + 1 - t to the budget for the m-byte
+     * core at c and the start t, so visiting the starts ascending and each start's lengths ascending is the exhaustive
+     * walk's own order, and a start more than budget - (m + 1) bytes before every occurrence has no candidate. A proved
+     * core longer than the budget minus its trailing byte admits no candidate at all, so every target refuses at once,
+     * exactly as the exhaustive walk would conclude after scanning to the end of the input.
      * @tparam Iterator Random access iterator type.
      * @param simulator The token set the plan is for.
      * @param begin Iterator to the beginning of the input.

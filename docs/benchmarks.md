@@ -190,7 +190,8 @@ effective self-pair that the merges in rank order give before any graph, and wit
 merges built on them, which has no effective self-pair, so its finite radius is read off the overlap graph. The probe
 explores the live graph by default, or the whole stopped graph with `--stopped`, and its output header names the graph.
 Before printing a finite answer it replays both witnesses on the encoder that applies the lowest-ranked merge at its
-leftmost occurrence, and a witness that does not attain its value exits 1.
+leftmost occurrence, and a witness that does not attain its value exits 1. The command below is the 3.2.0 equivalent of
+the archived run, whose binary predates `--stopped` and explored the stopped graph with no option.
 
 ```
 $ ulimit -v 12000000
