@@ -249,9 +249,10 @@ public:
      *        candidates; or the proof that the model certifies no window of any length; or a budget run out.
      *
      * Its window may be much longer than the state count, and for a grammar whose shortest window is longer than the
-     * window budget of chunk_boundaries_with_windows(), four bytes unless the call names another, that planner adds no
-     * cut through a window at that budget and its byte cuts remain. A found window is conditional on occurrence like
-     * every window certificate, which window_occurrence() settles. The derivation is dfa::shortest_split_window()'s.
+     * window budget of chunk_boundaries_with_windows(), four bytes unless chunk_boundaries_with_window_budget() is
+     * given another, that planner adds no cut through a window at that budget and its byte cuts remain. A found window
+     * is conditional on occurrence like every window certificate, which window_occurrence() settles. The derivation is
+     * dfa::shortest_split_window()'s.
      * @param budget The most search nodes visited before the search gives up, dfa::shortest_window_budget unless told.
      * @return The window and its origin, Outcome::none when none exists, or Outcome::budget.
      */
@@ -520,7 +521,7 @@ public:
     [[nodiscard]] std::vector<std::size_t> chunk_boundaries_with_windows(
             Iterator begin, Iterator end, const std::size_t chunks) const
     {
-        return chunk_boundaries_with_windows(begin, end, chunks, Window_planner::longest_window);
+        return chunk_boundaries_with_window_budget(begin, end, chunks, Window_planner::longest_window);
     }
 
     /**
@@ -559,7 +560,7 @@ public:
      * @return Offsets from 0 to the input size inclusive; adjacent pairs delimit the chunks.
      */
     template <common::concepts::Random_access_byte_iterator Iterator>
-    [[nodiscard]] std::vector<std::size_t> chunk_boundaries_with_windows(
+    [[nodiscard]] std::vector<std::size_t> chunk_boundaries_with_window_budget(
             Iterator begin, Iterator end, const std::size_t chunks, const std::size_t longest) const
     {
         if (simulator_.has_split_points())
@@ -595,7 +596,7 @@ public:
     }
 
     /**
-     * @brief Computes chunk_boundaries_with_windows(begin, end, chunks, longest) over a whole container.
+     * @brief Computes chunk_boundaries_with_window_budget(begin, end, chunks, longest) over a whole container.
      * @tparam Container The input container type (must offer random access).
      * @param container The input container.
      * @param chunks As for the iterator form above.
@@ -603,10 +604,10 @@ public:
      * @return As for the iterator form above.
      */
     template <common::concepts::Random_access_byte_iterable Container>
-    [[nodiscard]] std::vector<std::size_t> chunk_boundaries_with_windows(
+    [[nodiscard]] std::vector<std::size_t> chunk_boundaries_with_window_budget(
             const Container& container, const std::size_t chunks, const std::size_t longest) const
     {
-        return chunk_boundaries_with_windows(
+        return chunk_boundaries_with_window_budget(
                 std::ranges::begin(container), std::ranges::end(container), chunks, longest);
     }
 

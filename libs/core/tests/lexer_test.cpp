@@ -437,7 +437,7 @@ void expect_planner_equals_walk(
 
         for (const auto longest : {0U, 1U, 2U, 3U, 5U, 6U, 9U})
         {
-            const auto budgeted{lexer.chunk_boundaries_with_windows(input, chunks, longest)};
+            const auto budgeted{lexer.chunk_boundaries_with_window_budget(input, chunks, longest)};
 
             EXPECT_EQ(budgeted, reference_window_walk(lexer, input, chunks, longest)) << chunks << ' ' << longest;
         }
@@ -840,13 +840,12 @@ concept Window_plan_over = requires(const Lexer& lexer, const Container& contain
 };
 
 /**
- * @brief Whether Lexer::chunk_boundaries_with_windows() over a container with a window budget accepts the container
- *        type.
+ * @brief Whether Lexer::chunk_boundaries_with_window_budget() over a container accepts the container type.
  * @tparam Container The container type probed.
  */
 template <typename Container>
 concept Window_budget_plan_over = requires(const Lexer& lexer, const Container& container) {
-    lexer.chunk_boundaries_with_windows(container, std::size_t{2}, std::size_t{5});
+    lexer.chunk_boundaries_with_window_budget(container, std::size_t{2}, std::size_t{5});
 };
 
 /**
@@ -894,13 +893,12 @@ concept Window_plan_through = requires(const Lexer& lexer, const Iterator& itera
 };
 
 /**
- * @brief Whether Lexer::chunk_boundaries_with_windows() over an iterator pair with a window budget accepts the iterator
- *        type.
+ * @brief Whether Lexer::chunk_boundaries_with_window_budget() over an iterator pair accepts the iterator type.
  * @tparam Iterator The iterator type probed.
  */
 template <typename Iterator>
 concept Window_budget_plan_through = requires(const Lexer& lexer, const Iterator& iterator) {
-    lexer.chunk_boundaries_with_windows(iterator, iterator, std::size_t{2}, std::size_t{5});
+    lexer.chunk_boundaries_with_window_budget(iterator, iterator, std::size_t{2}, std::size_t{5});
 };
 
 /**
@@ -4060,11 +4058,11 @@ TEST_F(Lexer_test, A_window_budget_of_five_cuts_where_the_default_of_four_leaves
     const std::vector<std::size_t> whole{0, input.size()};
 
     EXPECT_EQ(lexer.chunk_boundaries_with_windows(input, 2), whole);
-    EXPECT_EQ(lexer.chunk_boundaries_with_windows(input, 2, Window_planner::longest_window), whole);
+    EXPECT_EQ(lexer.chunk_boundaries_with_window_budget(input, 2, Window_planner::longest_window), whole);
 
     for (const auto chunks : {2U, 3U, 5U})
     {
-        const auto plan{lexer.chunk_boundaries_with_windows(input, chunks, 5)};
+        const auto plan{lexer.chunk_boundaries_with_window_budget(input, chunks, 5)};
 
         EXPECT_EQ(plan, reference_window_walk(lexer, input, chunks, 5)) << chunks;
 
@@ -4097,11 +4095,13 @@ TEST_F(Lexer_test, A_window_budget_under_the_four_byte_study_window_leaves_the_p
 
     const std::string input{"\t*/\t\t*/\t"};
 
-    EXPECT_EQ(lexer.chunk_boundaries_with_windows(input, 2, 4), (std::vector<std::size_t>{0, 7, input.size()}));
+    EXPECT_EQ(lexer.chunk_boundaries_with_window_budget(input, 2, 4), (std::vector<std::size_t>{0, 7, input.size()}));
 
     for (const auto longest : {0U, 1U, 2U, 3U})
     {
-        EXPECT_EQ(lexer.chunk_boundaries_with_windows(input, 2, longest), (std::vector<std::size_t>{0, input.size()}))
+        EXPECT_EQ(
+                lexer.chunk_boundaries_with_window_budget(input, 2, longest),
+                (std::vector<std::size_t>{0, input.size()}))
                 << longest;
     }
 
@@ -4165,7 +4165,7 @@ TEST_F(Lexer_test, The_anchor_free_span_names_a_window_budget_of_five_where_four
     EXPECT_EQ(lexer.is_split_window("ababa"), 3U);
 
     EXPECT_EQ(lexer.chunk_boundaries_with_windows(input, 2), (std::vector<std::size_t>{0, input.size()}));
-    EXPECT_EQ(lexer.chunk_boundaries_with_windows(input, 2, 5), (std::vector<std::size_t>{0, 16, input.size()}));
+    EXPECT_EQ(lexer.chunk_boundaries_with_window_budget(input, 2, 5), (std::vector<std::size_t>{0, 16, input.size()}));
 }
 
 TEST_F(Lexer_test, Complete_c_like_grammar_windows_end_to_end)
@@ -4777,7 +4777,7 @@ TEST_F(Lexer_test, A_window_budget_of_five_finds_a_core_window_the_default_of_fo
 
     const auto by_default{lexer.chunk_boundaries_with_windows(input, 2)};
 
-    const auto wider{lexer.chunk_boundaries_with_windows(input, 2, 5)};
+    const auto wider{lexer.chunk_boundaries_with_window_budget(input, 2, 5)};
 
     EXPECT_EQ(by_default, reference_window_walk(lexer, input, 2));
     EXPECT_EQ(wider, reference_window_walk(lexer, input, 2, 5));
