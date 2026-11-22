@@ -15,12 +15,12 @@ using namespace munch::regex;
 /**
  * @brief A match the NFA simulator reports.
  */
-using Match = Simulator::Match;
+using Match_t = Simulator::Match;
 
 /**
  * @brief The match of a scan that matched nothing.
  */
-const Match no_match{.token = std::nullopt, .length = 0};
+const Match_t no_match{.token = std::nullopt, .length = 0};
 
 TEST(Concat_test, Two_concatenated_bytes_match_only_together)
 {
@@ -30,8 +30,8 @@ TEST(Concat_test, Two_concatenated_bytes_match_only_together)
 
     const auto nfa{to_nfa(regex).set_accept_token(token).build()};
 
-    EXPECT_EQ(Simulator::run(nfa, "ab"), (Match{.token = token, .length = 2}));
-    EXPECT_EQ(Simulator::run(nfa, "abc"), (Match{.token = token, .length = 2}));
+    EXPECT_EQ(Simulator::run(nfa, "ab"), (Match_t{.token = token, .length = 2}));
+    EXPECT_EQ(Simulator::run(nfa, "abc"), (Match_t{.token = token, .length = 2}));
 
     EXPECT_EQ(Simulator::run(nfa, ""), no_match);
     EXPECT_EQ(Simulator::run(nfa, "a"), no_match);
@@ -46,9 +46,9 @@ TEST(Concat_test, Four_concatenated_bytes_match_only_together)
 
     const auto nfa{to_nfa(regex).set_accept_token(token).build()};
 
-    EXPECT_EQ(Simulator::run(nfa, "abcd"), (Match{.token = token, .length = 4}));
-    EXPECT_EQ(Simulator::run(nfa, "abcde"), (Match{.token = token, .length = 4}));
-    EXPECT_EQ(Simulator::run(nfa, "abcd!"), (Match{.token = token, .length = 4}));
+    EXPECT_EQ(Simulator::run(nfa, "abcd"), (Match_t{.token = token, .length = 4}));
+    EXPECT_EQ(Simulator::run(nfa, "abcde"), (Match_t{.token = token, .length = 4}));
+    EXPECT_EQ(Simulator::run(nfa, "abcd!"), (Match_t{.token = token, .length = 4}));
 
     EXPECT_EQ(Simulator::run(nfa, ""), no_match);
     EXPECT_EQ(Simulator::run(nfa, "a"), no_match);

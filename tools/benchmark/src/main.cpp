@@ -591,7 +591,7 @@ bool time_end_to_end(
         const bool parallel)
 {
     // One counter per chunk, each on its own cache line, so the workers' increments neither race nor share a line.
-    using Counter = Padded<std::size_t>;
+    using Counter_t = Padded<std::size_t>;
 
     const std::string label{name};
 
@@ -640,7 +640,7 @@ bool time_end_to_end(
 
     for (int index{0}; index < passes; ++index)
     {
-        std::vector<Counter> counters(plan_chunks);
+        std::vector<Counter_t> counters(plan_chunks);
 
         std::size_t serial_consumed{0};
 
@@ -666,8 +666,8 @@ bool time_end_to_end(
 
         milliseconds.push_back(sample.count());
 
-        const auto counted{
-                std::ranges::fold_left(counters | std::views::transform(&Counter::value), std::size_t{0}, std::plus{})};
+        const auto counted{std::ranges::fold_left(
+                counters | std::views::transform(&Counter_t::value), std::size_t{0}, std::plus{})};
 
         const auto consumed_whole{
                 parallel ? chunks_consumed_whole(chunk_consumed) : serial_consumed_whole(serial_consumed)};

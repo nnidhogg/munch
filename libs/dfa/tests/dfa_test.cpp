@@ -36,7 +36,7 @@ using namespace munch::dfa;
 /**
  * @brief A match the DFA simulator reports.
  */
-using Match = Simulator::Match;
+using Match_t = Simulator::Match;
 
 namespace
 {
@@ -132,7 +132,7 @@ constexpr std::size_t discarded_kind{2};
 /**
  * @brief The match of a scan that matched nothing.
  */
-const Match no_match{.token = std::nullopt, .length = 0};
+const Match_t no_match{.token = std::nullopt, .length = 0};
 
 /**
  * @brief Builds the long-window family: one token kind, symbols a, b, r, t and #, and m sources, the j-th a cycle of
@@ -1657,7 +1657,7 @@ TEST(Dfa_test, A_string_container_runs_empty_and_non_empty)
     const Simulator simulator{builder.build()};
 
     EXPECT_EQ(simulator.run(std::string{}), no_match);
-    EXPECT_EQ(simulator.run(std::string{"a"}), (Match{.token = token, .length = 1}));
+    EXPECT_EQ(simulator.run(std::string{"a"}), (Match_t{.token = token, .length = 1}));
 }
 
 TEST(Dfa_test, A_vector_container_runs_like_a_string)
@@ -1676,7 +1676,7 @@ TEST(Dfa_test, A_vector_container_runs_like_a_string)
 
     const std::vector<char> input{'a'};
 
-    EXPECT_EQ(simulator.run(input), (Match{.token = token, .length = 1}));
+    EXPECT_EQ(simulator.run(input), (Match_t{.token = token, .length = 1}));
 }
 
 TEST(Dfa_test, A_self_loop_matches_a_long_run_to_its_end)
@@ -1694,9 +1694,9 @@ TEST(Dfa_test, A_self_loop_matches_a_long_run_to_its_end)
 
     const std::string run(5000, 'a');
 
-    EXPECT_EQ(simulator.run(run), (Match{.token = token, .length = run.size()}));
-    EXPECT_EQ(simulator.run(run + "b"), (Match{.token = token, .length = run.size()}));
-    EXPECT_EQ(simulator.run("b" + run), (Match{.token = token, .length = 0}));
+    EXPECT_EQ(simulator.run(run), (Match_t{.token = token, .length = run.size()}));
+    EXPECT_EQ(simulator.run(run + "b"), (Match_t{.token = token, .length = run.size()}));
+    EXPECT_EQ(simulator.run("b" + run), (Match_t{.token = token, .length = 0}));
 }
 
 TEST(Dfa_test, A_self_loop_matches_symbols_across_the_whole_byte_range)
@@ -1719,7 +1719,7 @@ TEST(Dfa_test, A_self_loop_matches_symbols_across_the_whole_byte_range)
 
     const std::string input{"\x3F\x40\x7F\x80\xBF\xC0\xFF"};
 
-    EXPECT_EQ(simulator.run(input), (Match{.token = token, .length = 7}));
+    EXPECT_EQ(simulator.run(input), (Match_t{.token = token, .length = 7}));
 }
 
 TEST(Dfa_test, An_accepting_start_matches_the_empty_input)
@@ -1736,7 +1736,7 @@ TEST(Dfa_test, An_accepting_start_matches_the_empty_input)
 
     const std::vector<char> input{};
 
-    EXPECT_EQ(simulator.run(input), (Match{.token = token, .length = 0}));
+    EXPECT_EQ(simulator.run(input), (Match_t{.token = token, .length = 0}));
 }
 
 TEST(Dfa_test, Unrolling_an_accepting_start_keeps_every_scan_and_the_empty_match)
@@ -1771,9 +1771,9 @@ TEST(Dfa_test, Unrolling_an_accepting_start_keeps_every_scan_and_the_empty_match
     const Simulator simulator{built};
 
     EXPECT_TRUE(simulator.nullable());
-    EXPECT_EQ(simulator.run(std::string{}), (Match{.token = token, .length = 0}));
-    EXPECT_EQ(simulator.run(std::string{"aaa"}), (Match{.token = token, .length = 3}));
-    EXPECT_EQ(simulator.run(std::string{"b"}), (Match{.token = token, .length = 0}));
+    EXPECT_EQ(simulator.run(std::string{}), (Match_t{.token = token, .length = 0}));
+    EXPECT_EQ(simulator.run(std::string{"aaa"}), (Match_t{.token = token, .length = 3}));
+    EXPECT_EQ(simulator.run(std::string{"b"}), (Match_t{.token = token, .length = 0}));
     EXPECT_FALSE(simulator.is_split_point('a'));
 
     // A start that does not accept is returned as it is.
@@ -1888,13 +1888,13 @@ TEST(Dfa_test, A_loop_then_a_final_byte_matches_any_run_ending_in_it)
 
     const Simulator simulator{builder.build()};
 
-    EXPECT_EQ(simulator.run("b"), (Match{.token = token, .length = 1}));
-    EXPECT_EQ(simulator.run("ab"), (Match{.token = token, .length = 2}));
-    EXPECT_EQ(simulator.run("ba"), (Match{.token = token, .length = 1}));
-    EXPECT_EQ(simulator.run("aab"), (Match{.token = token, .length = 3}));
-    EXPECT_EQ(simulator.run("baa"), (Match{.token = token, .length = 1}));
-    EXPECT_EQ(simulator.run("aaab"), (Match{.token = token, .length = 4}));
-    EXPECT_EQ(simulator.run("baaa"), (Match{.token = token, .length = 1}));
+    EXPECT_EQ(simulator.run("b"), (Match_t{.token = token, .length = 1}));
+    EXPECT_EQ(simulator.run("ab"), (Match_t{.token = token, .length = 2}));
+    EXPECT_EQ(simulator.run("ba"), (Match_t{.token = token, .length = 1}));
+    EXPECT_EQ(simulator.run("aab"), (Match_t{.token = token, .length = 3}));
+    EXPECT_EQ(simulator.run("baa"), (Match_t{.token = token, .length = 1}));
+    EXPECT_EQ(simulator.run("aaab"), (Match_t{.token = token, .length = 4}));
+    EXPECT_EQ(simulator.run("baaa"), (Match_t{.token = token, .length = 1}));
 
     EXPECT_EQ(simulator.run("a"), no_match);
     EXPECT_EQ(simulator.run("aa"), no_match);
@@ -1917,8 +1917,8 @@ TEST(Dfa_test, A_single_character_matches_one_byte)
 
     const Simulator simulator{builder.build()};
 
-    EXPECT_EQ(simulator.run("a"), (Match{.token = token, .length = 1}));
-    EXPECT_EQ(simulator.run("aa"), (Match{.token = token, .length = 1}));
+    EXPECT_EQ(simulator.run("a"), (Match_t{.token = token, .length = 1}));
+    EXPECT_EQ(simulator.run("aa"), (Match_t{.token = token, .length = 1}));
 
     EXPECT_EQ(simulator.run(""), no_match);
     EXPECT_EQ(simulator.run("b"), no_match);
@@ -1941,12 +1941,12 @@ TEST(Dfa_test, An_optional_character_matches_empty_or_one_byte)
 
     const Simulator simulator{builder.build()};
 
-    EXPECT_EQ(simulator.run(""), (Match{.token = token_empty, .length = 0}));
-    EXPECT_EQ(simulator.run("a"), (Match{.token = token_a, .length = 1}));
-    EXPECT_EQ(simulator.run("aa"), (Match{.token = token_a, .length = 1}));
+    EXPECT_EQ(simulator.run(""), (Match_t{.token = token_empty, .length = 0}));
+    EXPECT_EQ(simulator.run("a"), (Match_t{.token = token_a, .length = 1}));
+    EXPECT_EQ(simulator.run("aa"), (Match_t{.token = token_a, .length = 1}));
 
-    EXPECT_EQ(simulator.run("b"), (Match{.token = token_empty, .length = 0}));
-    EXPECT_EQ(simulator.run("ba"), (Match{.token = token_empty, .length = 0}));
+    EXPECT_EQ(simulator.run("b"), (Match_t{.token = token_empty, .length = 0}));
+    EXPECT_EQ(simulator.run("ba"), (Match_t{.token = token_empty, .length = 0}));
 }
 
 TEST(Dfa_test, A_sequence_matches_only_its_bytes_in_order)
@@ -1966,8 +1966,8 @@ TEST(Dfa_test, A_sequence_matches_only_its_bytes_in_order)
 
     const Simulator simulator{builder.build()};
 
-    EXPECT_EQ(simulator.run("ab"), (Match{.token = token, .length = 2}));
-    EXPECT_EQ(simulator.run("abc"), (Match{.token = token, .length = 2}));
+    EXPECT_EQ(simulator.run("ab"), (Match_t{.token = token, .length = 2}));
+    EXPECT_EQ(simulator.run("abc"), (Match_t{.token = token, .length = 2}));
 
     EXPECT_EQ(simulator.run("a"), no_match);
     EXPECT_EQ(simulator.run("b"), no_match);
@@ -1987,16 +1987,16 @@ TEST(Dfa_test, A_kleene_star_matches_every_run_including_the_empty_one)
 
     const Simulator simulator{builder.build()};
 
-    EXPECT_EQ(simulator.run(""), (Match{.token = token, .length = 0}));
-    EXPECT_EQ(simulator.run("a"), (Match{.token = token, .length = 1}));
-    EXPECT_EQ(simulator.run("aa"), (Match{.token = token, .length = 2}));
-    EXPECT_EQ(simulator.run("aaa"), (Match{.token = token, .length = 3}));
-    EXPECT_EQ(simulator.run("aaab"), (Match{.token = token, .length = 3}));
+    EXPECT_EQ(simulator.run(""), (Match_t{.token = token, .length = 0}));
+    EXPECT_EQ(simulator.run("a"), (Match_t{.token = token, .length = 1}));
+    EXPECT_EQ(simulator.run("aa"), (Match_t{.token = token, .length = 2}));
+    EXPECT_EQ(simulator.run("aaa"), (Match_t{.token = token, .length = 3}));
+    EXPECT_EQ(simulator.run("aaab"), (Match_t{.token = token, .length = 3}));
 
-    EXPECT_EQ(simulator.run("b"), (Match{.token = token, .length = 0}));
-    EXPECT_EQ(simulator.run("ba"), (Match{.token = token, .length = 0}));
-    EXPECT_EQ(simulator.run("baa"), (Match{.token = token, .length = 0}));
-    EXPECT_EQ(simulator.run("baaa"), (Match{.token = token, .length = 0}));
+    EXPECT_EQ(simulator.run("b"), (Match_t{.token = token, .length = 0}));
+    EXPECT_EQ(simulator.run("ba"), (Match_t{.token = token, .length = 0}));
+    EXPECT_EQ(simulator.run("baa"), (Match_t{.token = token, .length = 0}));
+    EXPECT_EQ(simulator.run("baaa"), (Match_t{.token = token, .length = 0}));
 }
 
 TEST(Dfa_test, A_branch_matches_either_alternative_with_its_token)
@@ -2018,10 +2018,10 @@ TEST(Dfa_test, A_branch_matches_either_alternative_with_its_token)
 
     const Simulator simulator{builder.build()};
 
-    EXPECT_EQ(simulator.run("a"), (Match{.token = token_a, .length = 1}));
-    EXPECT_EQ(simulator.run("b"), (Match{.token = token_b, .length = 1}));
-    EXPECT_EQ(simulator.run("ab"), (Match{.token = token_a, .length = 1}));
-    EXPECT_EQ(simulator.run("aa"), (Match{.token = token_a, .length = 1}));
+    EXPECT_EQ(simulator.run("a"), (Match_t{.token = token_a, .length = 1}));
+    EXPECT_EQ(simulator.run("b"), (Match_t{.token = token_b, .length = 1}));
+    EXPECT_EQ(simulator.run("ab"), (Match_t{.token = token_a, .length = 1}));
+    EXPECT_EQ(simulator.run("aa"), (Match_t{.token = token_a, .length = 1}));
 
     EXPECT_EQ(simulator.run(""), no_match);
     EXPECT_EQ(simulator.run("c"), no_match);
@@ -2049,10 +2049,10 @@ TEST(Dfa_test, A_repeated_sequence_matches_every_whole_repetition)
 
     const Simulator simulator{builder.build()};
 
-    EXPECT_EQ(simulator.run("abc"), (Match{.token = token, .length = 3}));
-    EXPECT_EQ(simulator.run("abca"), (Match{.token = token, .length = 3}));
-    EXPECT_EQ(simulator.run("abcabc"), (Match{.token = token, .length = 6}));
-    EXPECT_EQ(simulator.run("abcabcabc"), (Match{.token = token, .length = 9}));
+    EXPECT_EQ(simulator.run("abc"), (Match_t{.token = token, .length = 3}));
+    EXPECT_EQ(simulator.run("abca"), (Match_t{.token = token, .length = 3}));
+    EXPECT_EQ(simulator.run("abcabc"), (Match_t{.token = token, .length = 6}));
+    EXPECT_EQ(simulator.run("abcabcabc"), (Match_t{.token = token, .length = 9}));
 
     EXPECT_EQ(simulator.run(""), no_match);
     EXPECT_EQ(simulator.run("a"), no_match);
@@ -2077,8 +2077,8 @@ TEST(Dfa_test, A_prefix_loop_matches_up_to_the_sequence_after_it)
 
     const Simulator simulator{builder.build()};
 
-    EXPECT_EQ(simulator.run("ab"), (Match{.token = token, .length = 2}));
-    EXPECT_EQ(simulator.run("xxab"), (Match{.token = token, .length = 4}));
+    EXPECT_EQ(simulator.run("ab"), (Match_t{.token = token, .length = 2}));
+    EXPECT_EQ(simulator.run("xxab"), (Match_t{.token = token, .length = 4}));
 
     EXPECT_EQ(simulator.run("ax"), no_match);
 }
@@ -2108,9 +2108,9 @@ TEST(Dfa_test, Two_numeric_branches_match_only_their_complete_sequences)
 
     const Simulator simulator{builder.build()};
 
-    EXPECT_EQ(simulator.run("45"), (Match{.token = token_45, .length = 2}));
-    EXPECT_EQ(simulator.run("123"), (Match{.token = token_123, .length = 3}));
-    EXPECT_EQ(simulator.run("1234"), (Match{.token = token_123, .length = 3}));
+    EXPECT_EQ(simulator.run("45"), (Match_t{.token = token_45, .length = 2}));
+    EXPECT_EQ(simulator.run("123"), (Match_t{.token = token_123, .length = 3}));
+    EXPECT_EQ(simulator.run("1234"), (Match_t{.token = token_123, .length = 3}));
 
     EXPECT_EQ(simulator.run("12"), no_match);
     EXPECT_EQ(simulator.run("124"), no_match);
@@ -2133,10 +2133,10 @@ TEST(Dfa_test, A_plus_loop_matches_one_or_more_bytes)
 
     const Simulator simulator{builder.build()};
 
-    EXPECT_EQ(simulator.run("a"), (Match{.token = token, .length = 1}));
-    EXPECT_EQ(simulator.run("aa"), (Match{.token = token, .length = 2}));
-    EXPECT_EQ(simulator.run("aaa"), (Match{.token = token, .length = 3}));
-    EXPECT_EQ(simulator.run("aaaa"), (Match{.token = token, .length = 4}));
+    EXPECT_EQ(simulator.run("a"), (Match_t{.token = token, .length = 1}));
+    EXPECT_EQ(simulator.run("aa"), (Match_t{.token = token, .length = 2}));
+    EXPECT_EQ(simulator.run("aaa"), (Match_t{.token = token, .length = 3}));
+    EXPECT_EQ(simulator.run("aaaa"), (Match_t{.token = token, .length = 4}));
 
     EXPECT_EQ(simulator.run(""), no_match);
     EXPECT_EQ(simulator.run("b"), no_match);

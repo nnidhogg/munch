@@ -347,7 +347,7 @@ TEST(Pipeline_property_test, Lexer_agrees_with_direct_nfa_simulation)
 
 TEST(Pipeline_property_test, Certified_chunks_reproduce_the_serial_token_stream)
 {
-    using Emitted = std::pair<std::size_t, std::size_t>;
+    using Emitted_t = std::pair<std::size_t, std::size_t>;
 
     Random random{0x5b1cU};
 
@@ -395,7 +395,7 @@ TEST(Pipeline_property_test, Certified_chunks_reproduce_the_serial_token_stream)
             input += 's';
         }
 
-        std::vector<Emitted> serial{};
+        std::vector<Emitted_t> serial{};
 
         const auto collect{
                 [&serial](const std::size_t token, const std::size_t length) { serial.emplace_back(token, length); }};
@@ -409,7 +409,7 @@ TEST(Pipeline_property_test, Certified_chunks_reproduce_the_serial_token_stream)
             const auto boundaries{lexer.chunk_boundaries(input, chunks)};
 
             // Sized before the scan and never resized, so each worker writes only its own vector.
-            std::vector<std::vector<Emitted>> parts(chunks);
+            std::vector<std::vector<Emitted_t>> parts(chunks);
 
             const auto collect_chunk{
                     [&parts](const std::size_t chunk, const std::size_t token, const std::size_t length) {
@@ -420,7 +420,7 @@ TEST(Pipeline_property_test, Certified_chunks_reproduce_the_serial_token_stream)
 
             ASSERT_EQ(lengths.size() + 1, boundaries.size()) << "round " << round << ", chunks " << chunks;
 
-            std::vector<Emitted> spliced{};
+            std::vector<Emitted_t> spliced{};
 
             for (std::size_t chunk{0}; chunk < lengths.size(); ++chunk)
             {

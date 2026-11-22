@@ -72,7 +72,7 @@ struct Regex_text
     /**
      * @brief The class the whole regex is, where it is one, which a definition keeps for the differences that name it.
      */
-    std::optional<Class> points{};
+    std::optional<Class_t> points{};
 
     /**
      * @brief The names the regex refers to, bare or braced, in the order read: re2c binds a name where its definition
@@ -159,12 +159,12 @@ private:
         /**
          * @brief The class the term is while it is one class atom and nothing more.
          */
-        std::optional<Class> single{};
+        std::optional<Class_t> single{};
 
         /**
          * @brief The left operand of the difference the current term is the right operand of, once a `\` was read.
          */
-        std::optional<Class> left{};
+        std::optional<Class_t> left{};
 
         /**
          * @brief Whether every term closed in this group so far was a class.
@@ -174,7 +174,7 @@ private:
         /**
          * @brief The union of those, which is the group's class when they all were.
          */
-        Class branches{};
+        Class_t branches{};
     };
 
     /**
@@ -190,7 +190,7 @@ private:
         /**
          * @brief The class the literal is where it is one character, which re2c takes for a char set.
          */
-        std::optional<Class> points{};
+        std::optional<Class_t> points{};
     };
 
     /**
@@ -213,7 +213,7 @@ private:
         /**
          * @brief The class the escape is, empty for a letter.
          */
-        Class points{};
+        Class_t points{};
     };
 
     /**
@@ -244,14 +244,14 @@ private:
      * @brief Places an atom in the current term: the first atom's class is the term's until anything more joins it.
      * @param points The atom's class, when it is one.
      */
-    void place(std::optional<Class> points);
+    void place(std::optional<Class_t> points);
 
     /**
      * @brief Returns the class a definition is, when it is one.
      * @param name The definition's name.
      * @return The class, or std::nullopt when the definition is no class or there is none.
      */
-    [[nodiscard]] std::optional<Class> defined(std::string_view name) const;
+    [[nodiscard]] std::optional<Class_t> defined(std::string_view name) const;
 
     /**
      * @brief Reads a blank, which the pattern as written keeps as a space and the expression drops.

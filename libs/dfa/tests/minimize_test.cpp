@@ -15,14 +15,14 @@ using namespace munch::dfa;
 /**
  * @brief A match the DFA simulator reports.
  */
-using Match = Simulator::Match;
+using Match_t = Simulator::Match;
 
 namespace
 {
 /**
  * @brief The match of a scan that matched nothing.
  */
-const Match no_match{.token = std::nullopt, .length = 0};
+const Match_t no_match{.token = std::nullopt, .length = 0};
 
 /**
  * @brief Counts the distinct states a DFA names anywhere.
@@ -85,8 +85,8 @@ TEST(Minimize_test, Merges_states_accepting_the_same_token)
 
     const Simulator simulator{minimized};
 
-    EXPECT_EQ(simulator.run("a"), (Match{.token = token, .length = 1}));
-    EXPECT_EQ(simulator.run("b"), (Match{.token = token, .length = 1}));
+    EXPECT_EQ(simulator.run("a"), (Match_t{.token = token, .length = 1}));
+    EXPECT_EQ(simulator.run("b"), (Match_t{.token = token, .length = 1}));
 
     EXPECT_EQ(simulator.run("c"), no_match);
     EXPECT_EQ(simulator.run(""), no_match);
@@ -115,8 +115,8 @@ TEST(Minimize_test, Keeps_states_accepting_different_tokens)
 
     const Simulator simulator{minimized};
 
-    EXPECT_EQ(simulator.run("a"), (Match{.token = token_a, .length = 1}));
-    EXPECT_EQ(simulator.run("b"), (Match{.token = token_b, .length = 1}));
+    EXPECT_EQ(simulator.run("a"), (Match_t{.token = token_a, .length = 1}));
+    EXPECT_EQ(simulator.run("b"), (Match_t{.token = token_b, .length = 1}));
 }
 
 TEST(Minimize_test, Merges_equivalent_interior_states)
@@ -147,8 +147,8 @@ TEST(Minimize_test, Merges_equivalent_interior_states)
 
     const Simulator simulator{minimized};
 
-    EXPECT_EQ(simulator.run("ab"), (Match{.token = token, .length = 2}));
-    EXPECT_EQ(simulator.run("cb"), (Match{.token = token, .length = 2}));
+    EXPECT_EQ(simulator.run("ab"), (Match_t{.token = token, .length = 2}));
+    EXPECT_EQ(simulator.run("cb"), (Match_t{.token = token, .length = 2}));
 
     EXPECT_EQ(simulator.run("a"), no_match);
     EXPECT_EQ(simulator.run("cc"), no_match);
@@ -183,7 +183,7 @@ TEST(Minimize_test, Keeps_a_reachable_chain_with_empty_right_language)
     const Simulator simulator{minimized};
 
     // The recognized language is exactly "a" regardless, so keeping the chain costs states and not correctness.
-    EXPECT_EQ(simulator.run("a"), (Match{.token = token, .length = 1}));
+    EXPECT_EQ(simulator.run("a"), (Match_t{.token = token, .length = 1}));
     EXPECT_EQ(simulator.run("b"), no_match);
     EXPECT_EQ(simulator.run("bc"), no_match);
 }
@@ -215,7 +215,7 @@ TEST(Minimize_test, Keeps_an_island_the_initial_state_cannot_reach)
 
     const Simulator simulator{minimized};
 
-    EXPECT_EQ(simulator.run("a"), (Match{.token = reachable, .length = 1}));
+    EXPECT_EQ(simulator.run("a"), (Match_t{.token = reachable, .length = 1}));
 
     // The island is unreachable, so its token can never be emitted no matter what the automaton still carries.
     EXPECT_EQ(simulator.run("b"), no_match);
@@ -248,6 +248,6 @@ TEST(Minimize_test, Keeps_states_with_different_symbol_sets)
 
     const Simulator simulator{minimized};
 
-    EXPECT_EQ(simulator.run("ab"), (Match{.token = token, .length = 2}));
-    EXPECT_EQ(simulator.run("cb"), (Match{.token = token, .length = 1}));
+    EXPECT_EQ(simulator.run("ab"), (Match_t{.token = token, .length = 2}));
+    EXPECT_EQ(simulator.run("cb"), (Match_t{.token = token, .length = 1}));
 }

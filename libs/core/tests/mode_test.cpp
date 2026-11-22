@@ -340,12 +340,12 @@ concept Mode_full_over_with_stack = requires(const Mode_lexer& lexer, const Cont
 
 TEST(Mode_test, Every_entry_point_holds_the_byte_domain_and_scans_std_byte_like_char)
 {
-    using Good_iterator = std::string_view::iterator;
-    using Bad_iterator = std::vector<double>::const_iterator;
+    using Good_iterator_t = std::string_view::iterator;
+    using Bad_iterator_t = std::vector<double>::const_iterator;
 
-    static_assert(Mode_single_through<Good_iterator> && !Mode_single_through<Bad_iterator>);
-    static_assert(Mode_full_through<Good_iterator> && !Mode_full_through<Bad_iterator>);
-    static_assert(Mode_full_through_with_stack<Good_iterator> && !Mode_full_through_with_stack<Bad_iterator>);
+    static_assert(Mode_single_through<Good_iterator_t> && !Mode_single_through<Bad_iterator_t>);
+    static_assert(Mode_full_through<Good_iterator_t> && !Mode_full_through<Bad_iterator_t>);
+    static_assert(Mode_full_through_with_stack<Good_iterator_t> && !Mode_full_through_with_stack<Bad_iterator_t>);
     static_assert(Mode_full_over<std::string> && !Mode_full_over<std::vector<double>>);
     static_assert(!Mode_full_over<std::vector<std::string>>);
     static_assert(Mode_full_over_with_stack<std::string> && !Mode_full_over_with_stack<std::vector<double>>);

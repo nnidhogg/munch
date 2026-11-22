@@ -68,13 +68,13 @@ constexpr std::size_t code_mode{0};
 /**
  * @brief The match results lexertl scans a machine without start-state pushes with.
  */
-using Flat_results = lexertl::match_results<std::string::const_iterator>;
+using Flat_results_t = lexertl::match_results<std::string::const_iterator>;
 
 /**
  * @brief The match results lexertl scans a machine whose rules push and pop start states with: the stack the pushes use
  *        lives on this type, and lookup() dereferences it whether or not the plain type has one.
  */
-using Nested_results = lexertl::recursive_match_results<std::string::const_iterator>;
+using Nested_results_t = lexertl::recursive_match_results<std::string::const_iterator>;
 
 /**
  * @brief The outcome of tokenizing the whole input once, zeroed if the input was rejected.
@@ -377,8 +377,8 @@ lexertl::state_machine build_lexertl()
 
 /**
  * @brief Tokenizes the whole input once through a lexertl state machine.
- * @tparam Results The match results type, Nested_results for a machine whose rules push and pop start states and
- *         Flat_results otherwise.
+ * @tparam Results The match results type, Nested_results_t for a machine whose rules push and pop start states and
+ *         Flat_results_t otherwise.
  * @tparam Sink The sink's type.
  * @param machine The state machine.
  * @param input The input.
@@ -927,7 +927,7 @@ bool compare_modes(const std::size_t mebibytes, const int passes, const std::opt
     const auto munch_stream{stream_of(scan_munch_corpus)};
 
     const auto scan_lexertl_corpus{
-            [&]<typename Sink>(Sink&& sink) { return scan_lexertl<Flat_results>(machine, input, sink); }};
+            [&]<typename Sink>(Sink&& sink) { return scan_lexertl<Flat_results_t>(machine, input, sink); }};
 
     const auto lexertl_stream{stream_of(scan_lexertl_corpus)};
 
@@ -990,7 +990,8 @@ bool compare_modes(const std::size_t mebibytes, const int passes, const std::opt
              .bytes = input.size(),
              .pass =
                      [&] {
-                         return tally_of([&](auto&& sink) { return scan_lexertl<Flat_results>(machine, input, sink); })
+                         return tally_of(
+                                        [&](auto&& sink) { return scan_lexertl<Flat_results_t>(machine, input, sink); })
                                  .tokens;
                      }},
     }};
@@ -1139,7 +1140,7 @@ bool compare_nested(const std::size_t mebibytes, const int passes, const std::op
     const auto munch_stream{stream_of(scan_munch_corpus)};
 
     const auto scan_lexertl_corpus{
-            [&]<typename Sink>(Sink&& sink) { return scan_lexertl<Nested_results>(machine, input, sink); }};
+            [&]<typename Sink>(Sink&& sink) { return scan_lexertl<Nested_results_t>(machine, input, sink); }};
 
     const auto lexertl_stream{stream_of(scan_lexertl_corpus)};
 
@@ -1174,8 +1175,9 @@ bool compare_nested(const std::size_t mebibytes, const int passes, const std::op
              .bytes = input.size(),
              .pass =
                      [&] {
-                         return tally_of(
-                                        [&](auto&& sink) { return scan_lexertl<Nested_results>(machine, input, sink); })
+                         return tally_of([&](auto&& sink) {
+                                    return scan_lexertl<Nested_results_t>(machine, input, sink);
+                                })
                                  .tokens;
                      }},
     }};
@@ -1277,12 +1279,12 @@ int main(const int argc, char** argv)
              .run =
                      [&](const std::string& input) {
                          return tally_of(
-                                 [&](auto&& s) { return scan_lexertl<Flat_results>(lexertl_machine, input, s); });
+                                 [&](auto&& s) { return scan_lexertl<Flat_results_t>(lexertl_machine, input, s); });
                      },
              .stream =
                      [&](const std::string& input) {
                          return stream_of(
-                                 [&](auto&& s) { return scan_lexertl<Flat_results>(lexertl_machine, input, s); });
+                                 [&](auto&& s) { return scan_lexertl<Flat_results_t>(lexertl_machine, input, s); });
                      }},
             {.name = "ctre",
              .run = [&](const std::string& input) { return tally_of([&](auto&& s) { return scan_ctre(input, s); }); },

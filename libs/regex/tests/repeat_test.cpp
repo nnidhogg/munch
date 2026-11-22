@@ -20,12 +20,12 @@ using namespace munch::regex;
 /**
  * @brief A match the NFA simulator reports.
  */
-using Match = Simulator::Match;
+using Match_t = Simulator::Match;
 
 /**
  * @brief The match of a scan that matched nothing.
  */
-const Match no_match{.token = std::nullopt, .length = 0};
+const Match_t no_match{.token = std::nullopt, .length = 0};
 
 TEST(Repeat_test, A_kleene_star_matches_every_run_including_the_empty_one)
 {
@@ -37,20 +37,20 @@ TEST(Repeat_test, A_kleene_star_matches_every_run_including_the_empty_one)
 
     const auto nfa{to_nfa(regex).set_accept_token(token).build()};
 
-    EXPECT_EQ(Simulator::run(nfa, ""), (Match{.token = token, .length = 0}));
-    EXPECT_EQ(Simulator::run(nfa, "a"), (Match{.token = token, .length = 1}));
-    EXPECT_EQ(Simulator::run(nfa, "ab"), (Match{.token = token, .length = 1}));
-    EXPECT_EQ(Simulator::run(nfa, "aa"), (Match{.token = token, .length = 2}));
-    EXPECT_EQ(Simulator::run(nfa, "aab"), (Match{.token = token, .length = 2}));
-    EXPECT_EQ(Simulator::run(nfa, "aaa"), (Match{.token = token, .length = 3}));
-    EXPECT_EQ(Simulator::run(nfa, "aaaa"), (Match{.token = token, .length = 4}));
-    EXPECT_EQ(Simulator::run(nfa, "aaab"), (Match{.token = token, .length = 3}));
-    EXPECT_EQ(Simulator::run(nfa, "ababa"), (Match{.token = token, .length = 1}));
+    EXPECT_EQ(Simulator::run(nfa, ""), (Match_t{.token = token, .length = 0}));
+    EXPECT_EQ(Simulator::run(nfa, "a"), (Match_t{.token = token, .length = 1}));
+    EXPECT_EQ(Simulator::run(nfa, "ab"), (Match_t{.token = token, .length = 1}));
+    EXPECT_EQ(Simulator::run(nfa, "aa"), (Match_t{.token = token, .length = 2}));
+    EXPECT_EQ(Simulator::run(nfa, "aab"), (Match_t{.token = token, .length = 2}));
+    EXPECT_EQ(Simulator::run(nfa, "aaa"), (Match_t{.token = token, .length = 3}));
+    EXPECT_EQ(Simulator::run(nfa, "aaaa"), (Match_t{.token = token, .length = 4}));
+    EXPECT_EQ(Simulator::run(nfa, "aaab"), (Match_t{.token = token, .length = 3}));
+    EXPECT_EQ(Simulator::run(nfa, "ababa"), (Match_t{.token = token, .length = 1}));
 
-    EXPECT_EQ(Simulator::run(nfa, "b"), (Match{.token = token, .length = 0}));
-    EXPECT_EQ(Simulator::run(nfa, "ba"), (Match{.token = token, .length = 0}));
-    EXPECT_EQ(Simulator::run(nfa, "baa"), (Match{.token = token, .length = 0}));
-    EXPECT_EQ(Simulator::run(nfa, "baaa"), (Match{.token = token, .length = 0}));
+    EXPECT_EQ(Simulator::run(nfa, "b"), (Match_t{.token = token, .length = 0}));
+    EXPECT_EQ(Simulator::run(nfa, "ba"), (Match_t{.token = token, .length = 0}));
+    EXPECT_EQ(Simulator::run(nfa, "baa"), (Match_t{.token = token, .length = 0}));
+    EXPECT_EQ(Simulator::run(nfa, "baaa"), (Match_t{.token = token, .length = 0}));
 }
 
 TEST(Repeat_test, A_plus_matches_one_or_more)
@@ -63,14 +63,14 @@ TEST(Repeat_test, A_plus_matches_one_or_more)
 
     const auto nfa{to_nfa(regex).set_accept_token(token).build()};
 
-    EXPECT_EQ(Simulator::run(nfa, "a"), (Match{.token = token, .length = 1}));
-    EXPECT_EQ(Simulator::run(nfa, "aa"), (Match{.token = token, .length = 2}));
-    EXPECT_EQ(Simulator::run(nfa, "ab"), (Match{.token = token, .length = 1}));
-    EXPECT_EQ(Simulator::run(nfa, "aaa"), (Match{.token = token, .length = 3}));
-    EXPECT_EQ(Simulator::run(nfa, "aab"), (Match{.token = token, .length = 2}));
-    EXPECT_EQ(Simulator::run(nfa, "aaaa"), (Match{.token = token, .length = 4}));
-    EXPECT_EQ(Simulator::run(nfa, "aaab"), (Match{.token = token, .length = 3}));
-    EXPECT_EQ(Simulator::run(nfa, "ababa"), (Match{.token = token, .length = 1}));
+    EXPECT_EQ(Simulator::run(nfa, "a"), (Match_t{.token = token, .length = 1}));
+    EXPECT_EQ(Simulator::run(nfa, "aa"), (Match_t{.token = token, .length = 2}));
+    EXPECT_EQ(Simulator::run(nfa, "ab"), (Match_t{.token = token, .length = 1}));
+    EXPECT_EQ(Simulator::run(nfa, "aaa"), (Match_t{.token = token, .length = 3}));
+    EXPECT_EQ(Simulator::run(nfa, "aab"), (Match_t{.token = token, .length = 2}));
+    EXPECT_EQ(Simulator::run(nfa, "aaaa"), (Match_t{.token = token, .length = 4}));
+    EXPECT_EQ(Simulator::run(nfa, "aaab"), (Match_t{.token = token, .length = 3}));
+    EXPECT_EQ(Simulator::run(nfa, "ababa"), (Match_t{.token = token, .length = 1}));
 
     EXPECT_EQ(Simulator::run(nfa, ""), no_match);
     EXPECT_EQ(Simulator::run(nfa, "b"), no_match);
@@ -89,12 +89,12 @@ TEST(Repeat_test, An_optional_matches_zero_or_one)
 
     const auto nfa{to_nfa(regex).set_accept_token(token).build()};
 
-    EXPECT_EQ(Simulator::run(nfa, ""), (Match{.token = token, .length = 0}));
-    EXPECT_EQ(Simulator::run(nfa, "a"), (Match{.token = token, .length = 1}));
-    EXPECT_EQ(Simulator::run(nfa, "b"), (Match{.token = token, .length = 0}));
-    EXPECT_EQ(Simulator::run(nfa, "aa"), (Match{.token = token, .length = 1}));
-    EXPECT_EQ(Simulator::run(nfa, "ab"), (Match{.token = token, .length = 1}));
-    EXPECT_EQ(Simulator::run(nfa, "ba"), (Match{.token = token, .length = 0}));
+    EXPECT_EQ(Simulator::run(nfa, ""), (Match_t{.token = token, .length = 0}));
+    EXPECT_EQ(Simulator::run(nfa, "a"), (Match_t{.token = token, .length = 1}));
+    EXPECT_EQ(Simulator::run(nfa, "b"), (Match_t{.token = token, .length = 0}));
+    EXPECT_EQ(Simulator::run(nfa, "aa"), (Match_t{.token = token, .length = 1}));
+    EXPECT_EQ(Simulator::run(nfa, "ab"), (Match_t{.token = token, .length = 1}));
+    EXPECT_EQ(Simulator::run(nfa, "ba"), (Match_t{.token = token, .length = 0}));
 }
 
 TEST(Repeat_test, An_exact_repetition_matches_only_its_count)
@@ -107,9 +107,9 @@ TEST(Repeat_test, An_exact_repetition_matches_only_its_count)
 
     const auto nfa{to_nfa(regex).set_accept_token(token).build()};
 
-    EXPECT_EQ(Simulator::run(nfa, "aaa"), (Match{.token = token, .length = 3}));
-    EXPECT_EQ(Simulator::run(nfa, "aaaa"), (Match{.token = token, .length = 3}));
-    EXPECT_EQ(Simulator::run(nfa, "aaab"), (Match{.token = token, .length = 3}));
+    EXPECT_EQ(Simulator::run(nfa, "aaa"), (Match_t{.token = token, .length = 3}));
+    EXPECT_EQ(Simulator::run(nfa, "aaaa"), (Match_t{.token = token, .length = 3}));
+    EXPECT_EQ(Simulator::run(nfa, "aaab"), (Match_t{.token = token, .length = 3}));
 
     EXPECT_EQ(Simulator::run(nfa, ""), no_match);
     EXPECT_EQ(Simulator::run(nfa, "a"), no_match);
@@ -129,10 +129,10 @@ TEST(Repeat_test, An_at_least_repetition_matches_its_count_and_more)
 
     const auto nfa{to_nfa(regex).set_accept_token(token).build()};
 
-    EXPECT_EQ(Simulator::run(nfa, "aaa"), (Match{.token = token, .length = 3}));
-    EXPECT_EQ(Simulator::run(nfa, "aaaa"), (Match{.token = token, .length = 4}));
-    EXPECT_EQ(Simulator::run(nfa, "aaaaa"), (Match{.token = token, .length = 5}));
-    EXPECT_EQ(Simulator::run(nfa, "aaaaaa"), (Match{.token = token, .length = 6}));
+    EXPECT_EQ(Simulator::run(nfa, "aaa"), (Match_t{.token = token, .length = 3}));
+    EXPECT_EQ(Simulator::run(nfa, "aaaa"), (Match_t{.token = token, .length = 4}));
+    EXPECT_EQ(Simulator::run(nfa, "aaaaa"), (Match_t{.token = token, .length = 5}));
+    EXPECT_EQ(Simulator::run(nfa, "aaaaaa"), (Match_t{.token = token, .length = 6}));
 
     EXPECT_EQ(Simulator::run(nfa, ""), no_match);
     EXPECT_EQ(Simulator::run(nfa, "a"), no_match);
@@ -152,12 +152,12 @@ TEST(Repeat_test, At_least_zero_repetitions_is_the_kleene_star)
 
     const auto nfa{to_nfa(regex).set_accept_token(token).build()};
 
-    EXPECT_EQ(Simulator::run(nfa, "a"), (Match{.token = token, .length = 1}));
-    EXPECT_EQ(Simulator::run(nfa, "aa"), (Match{.token = token, .length = 2}));
-    EXPECT_EQ(Simulator::run(nfa, "aaa"), (Match{.token = token, .length = 3}));
+    EXPECT_EQ(Simulator::run(nfa, "a"), (Match_t{.token = token, .length = 1}));
+    EXPECT_EQ(Simulator::run(nfa, "aa"), (Match_t{.token = token, .length = 2}));
+    EXPECT_EQ(Simulator::run(nfa, "aaa"), (Match_t{.token = token, .length = 3}));
 
-    EXPECT_EQ(Simulator::run(nfa, "b"), (Match{.token = token, .length = 0}));
-    EXPECT_EQ(Simulator::run(nfa, "ba"), (Match{.token = token, .length = 0}));
+    EXPECT_EQ(Simulator::run(nfa, "b"), (Match_t{.token = token, .length = 0}));
+    EXPECT_EQ(Simulator::run(nfa, "ba"), (Match_t{.token = token, .length = 0}));
 }
 
 TEST(Repeat_test, A_range_ending_before_it_starts_throws)
@@ -175,12 +175,12 @@ TEST(Repeat_test, A_range_repetition_matches_every_count_within_it)
 
     const auto nfa{to_nfa(regex).set_accept_token(token).build()};
 
-    EXPECT_EQ(Simulator::run(nfa, "aa"), (Match{.token = token, .length = 2}));
-    EXPECT_EQ(Simulator::run(nfa, "aab"), (Match{.token = token, .length = 2}));
-    EXPECT_EQ(Simulator::run(nfa, "aaa"), (Match{.token = token, .length = 3}));
-    EXPECT_EQ(Simulator::run(nfa, "aaaa"), (Match{.token = token, .length = 4}));
-    EXPECT_EQ(Simulator::run(nfa, "aaab"), (Match{.token = token, .length = 3}));
-    EXPECT_EQ(Simulator::run(nfa, "aaaaa"), (Match{.token = token, .length = 4}));
+    EXPECT_EQ(Simulator::run(nfa, "aa"), (Match_t{.token = token, .length = 2}));
+    EXPECT_EQ(Simulator::run(nfa, "aab"), (Match_t{.token = token, .length = 2}));
+    EXPECT_EQ(Simulator::run(nfa, "aaa"), (Match_t{.token = token, .length = 3}));
+    EXPECT_EQ(Simulator::run(nfa, "aaaa"), (Match_t{.token = token, .length = 4}));
+    EXPECT_EQ(Simulator::run(nfa, "aaab"), (Match_t{.token = token, .length = 3}));
+    EXPECT_EQ(Simulator::run(nfa, "aaaaa"), (Match_t{.token = token, .length = 4}));
 
     EXPECT_EQ(Simulator::run(nfa, ""), no_match);
     EXPECT_EQ(Simulator::run(nfa, "a"), no_match);
@@ -198,27 +198,27 @@ TEST(Repeat_test, A_range_over_a_body_that_ends_in_a_repetition_admits_no_suffix
 
     const auto once{to_nfa(range(body, 0, 1)).set_accept_token(token).build()};
 
-    EXPECT_EQ(Simulator::run(once, "b"), (Match{.token = token, .length = 0}));
-    EXPECT_EQ(Simulator::run(once, "bb"), (Match{.token = token, .length = 0}));
-    EXPECT_EQ(Simulator::run(once, ""), (Match{.token = token, .length = 0}));
-    EXPECT_EQ(Simulator::run(once, "ab"), (Match{.token = token, .length = 2}));
-    EXPECT_EQ(Simulator::run(once, "abb"), (Match{.token = token, .length = 3}));
-    EXPECT_EQ(Simulator::run(once, "abab"), (Match{.token = token, .length = 2}));
+    EXPECT_EQ(Simulator::run(once, "b"), (Match_t{.token = token, .length = 0}));
+    EXPECT_EQ(Simulator::run(once, "bb"), (Match_t{.token = token, .length = 0}));
+    EXPECT_EQ(Simulator::run(once, ""), (Match_t{.token = token, .length = 0}));
+    EXPECT_EQ(Simulator::run(once, "ab"), (Match_t{.token = token, .length = 2}));
+    EXPECT_EQ(Simulator::run(once, "abb"), (Match_t{.token = token, .length = 3}));
+    EXPECT_EQ(Simulator::run(once, "abab"), (Match_t{.token = token, .length = 2}));
 
     const auto twice{to_nfa(range(body, 0, 2)).set_accept_token(token).build()};
 
-    EXPECT_EQ(Simulator::run(twice, "b"), (Match{.token = token, .length = 0}));
-    EXPECT_EQ(Simulator::run(twice, "abab"), (Match{.token = token, .length = 4}));
-    EXPECT_EQ(Simulator::run(twice, "ababab"), (Match{.token = token, .length = 4}));
+    EXPECT_EQ(Simulator::run(twice, "b"), (Match_t{.token = token, .length = 0}));
+    EXPECT_EQ(Simulator::run(twice, "abab"), (Match_t{.token = token, .length = 4}));
+    EXPECT_EQ(Simulator::run(twice, "ababab"), (Match_t{.token = token, .length = 4}));
 
     // The same body with a required copy before the optional one, where the suffix could only be admitted after the
     // first copy had matched.
     const auto bounded{to_nfa(range(body, 1, 2)).set_accept_token(token).build()};
 
     EXPECT_EQ(Simulator::run(bounded, "b"), no_match);
-    EXPECT_EQ(Simulator::run(bounded, "ab"), (Match{.token = token, .length = 2}));
-    EXPECT_EQ(Simulator::run(bounded, "abb"), (Match{.token = token, .length = 3}));
-    EXPECT_EQ(Simulator::run(bounded, "abab"), (Match{.token = token, .length = 4}));
+    EXPECT_EQ(Simulator::run(bounded, "ab"), (Match_t{.token = token, .length = 2}));
+    EXPECT_EQ(Simulator::run(bounded, "abb"), (Match_t{.token = token, .length = 3}));
+    EXPECT_EQ(Simulator::run(bounded, "abab"), (Match_t{.token = token, .length = 4}));
 }
 
 TEST(Repeat_test, Every_repetition_agrees_with_its_expansion_on_every_body_and_input_enumerated)
@@ -366,6 +366,6 @@ TEST(Repeat_test, Copies_are_independent_values)
 
     const auto copied_nfa{to_nfa(copy).set_accept_token(token).build()};
 
-    EXPECT_EQ(Simulator::run(original_nfa, "abab"), (Match{.token = token, .length = 4}));
-    EXPECT_EQ(Simulator::run(copied_nfa, "abab"), (Match{.token = token, .length = 4}));
+    EXPECT_EQ(Simulator::run(original_nfa, "abab"), (Match_t{.token = token, .length = 4}));
+    EXPECT_EQ(Simulator::run(copied_nfa, "abab"), (Match_t{.token = token, .length = 4}));
 }

@@ -2148,7 +2148,7 @@ struct Pair_rules
     /**
      * @brief The product's node type.
      */
-    using Node = Pair_node;
+    using Node_t = Pair_node;
 
     /**
      * @brief Returns the node before any byte: both copies at the start, aligned, nothing differing.
@@ -2331,7 +2331,7 @@ struct Domain_rules
     /**
      * @brief The product's node type.
      */
-    using Node = Domain_node;
+    using Node_t = Domain_node;
 
     /**
      * @brief Returns the node before any byte: the run at the start, its set the start's own.
@@ -2466,7 +2466,7 @@ public:
     /**
      * @brief The product's node type.
      */
-    using Node = typename Rules::Node;
+    using Node_t = typename Rules::Node_t;
 
     /**
      * @brief Explores the product: the nodes before the cut, the nodes the cut at offset zero places, the nodes after
@@ -2479,13 +2479,13 @@ public:
      * @brief Returns the nodes before the cut reachable from the root, the cloud before a window's first byte.
      * @return The nodes.
      */
-    [[nodiscard]] const Cloud_t<Node>& before() const noexcept;
+    [[nodiscard]] const Cloud_t<Node_t>& before() const noexcept;
 
     /**
      * @brief Returns the nodes the cut at offset zero places, the cloud of that cut before a window's first byte.
      * @return The nodes.
      */
-    [[nodiscard]] const Cloud_t<Node>& at_zero() const noexcept;
+    [[nodiscard]] const Cloud_t<Node_t>& at_zero() const noexcept;
 
     /**
      * @brief Returns the nodes a symbol leads a cloud's nodes to, by steps on the same side of the cut.
@@ -2493,7 +2493,7 @@ public:
      * @param symbol The symbol.
      * @return The cloud reached.
      */
-    [[nodiscard]] Cloud_t<Node> image(const Cloud_t<Node>& cloud, std::size_t symbol) const;
+    [[nodiscard]] Cloud_t<Node_t> image(const Cloud_t<Node_t>& cloud, std::size_t symbol) const;
 
     /**
      * @brief Returns the nodes a symbol leads a cloud's nodes before the cut to by a cut after it.
@@ -2501,7 +2501,7 @@ public:
      * @param symbol The symbol.
      * @return The cloud reached, after the cut.
      */
-    [[nodiscard]] Cloud_t<Node> cut_image(const Cloud_t<Node>& cloud, std::size_t symbol) const;
+    [[nodiscard]] Cloud_t<Node_t> cut_image(const Cloud_t<Node_t>& cloud, std::size_t symbol) const;
 
     /**
      * @brief Returns whether a cloud after the cut, past a window's last byte, holds the cut: no refuting node is
@@ -2509,7 +2509,7 @@ public:
      * @param cloud The cloud.
      * @return True when the cut holds.
      */
-    [[nodiscard]] bool holds(const Cloud_t<Node>& cloud) const;
+    [[nodiscard]] bool holds(const Cloud_t<Node_t>& cloud) const;
 
 private:
     /**
@@ -2517,7 +2517,7 @@ private:
      *        nodes after the cut reachable from the ones the cut at offset zero places.
      * @return The nodes, ascending.
      */
-    [[nodiscard]] Cloud_t<Node> refuting_nodes() const;
+    [[nodiscard]] Cloud_t<Node_t> refuting_nodes() const;
 
     /**
      * @brief The rules.
@@ -2527,17 +2527,17 @@ private:
     /**
      * @brief The nodes before the cut reachable from the root.
      */
-    Cloud_t<Node> before_{};
+    Cloud_t<Node_t> before_{};
 
     /**
      * @brief The nodes the cut at offset zero places.
      */
-    Cloud_t<Node> at_zero_{};
+    Cloud_t<Node_t> at_zero_{};
 
     /**
      * @brief The nodes after the cut from which a refuting node is reachable.
      */
-    Cloud_t<Node> refuting_{};
+    Cloud_t<Node_t> refuting_{};
 };
 
 /**
@@ -2585,11 +2585,11 @@ Product<Rules>::Product(Rules rules) : rules_{std::move(rules)}
 {
     const auto symbols{rules_.run.symbol_count()};
 
-    const auto step{[this]<typename Emit>(const Node& node, const std::size_t symbol, const Emit& emit) {
+    const auto step{[this]<typename Emit>(const Node_t& node, const std::size_t symbol, const Emit& emit) {
         rules_.step(node, symbol, emit);
     }};
 
-    before_ = reachable_from(Cloud_t<Node>{rules_.root()}, symbols, step);
+    before_ = reachable_from(Cloud_t<Node_t>{rules_.root()}, symbols, step);
 
     for (std::size_t symbol{0}; symbol < symbols; ++symbol)
     {
@@ -2609,23 +2609,24 @@ Product<Rules>::Product(Rules rules) : rules_{std::move(rules)}
 }
 
 template <typename Rules>
-const Cloud_t<typename Product<Rules>::Node>& Product<Rules>::before() const noexcept
+const Cloud_t<typename Product<Rules>::Node_t>& Product<Rules>::before() const noexcept
 {
     return before_;
 }
 
 template <typename Rules>
-const Cloud_t<typename Product<Rules>::Node>& Product<Rules>::at_zero() const noexcept
+const Cloud_t<typename Product<Rules>::Node_t>& Product<Rules>::at_zero() const noexcept
 {
     return at_zero_;
 }
 
 template <typename Rules>
-Cloud_t<typename Product<Rules>::Node> Product<Rules>::image(const Cloud_t<Node>& cloud, const std::size_t symbol) const
+Cloud_t<typename Product<Rules>::Node_t> Product<Rules>::image(
+        const Cloud_t<Node_t>& cloud, const std::size_t symbol) const
 {
-    Cloud_t<Node> next{};
+    Cloud_t<Node_t> next{};
 
-    const auto collect{[&next](const Node& node) { next.push_back(node); }};
+    const auto collect{[&next](const Node_t& node) { next.push_back(node); }};
 
     for (const auto& node : cloud)
     {
@@ -2638,12 +2639,12 @@ Cloud_t<typename Product<Rules>::Node> Product<Rules>::image(const Cloud_t<Node>
 }
 
 template <typename Rules>
-Cloud_t<typename Product<Rules>::Node> Product<Rules>::cut_image(
-        const Cloud_t<Node>& cloud, const std::size_t symbol) const
+Cloud_t<typename Product<Rules>::Node_t> Product<Rules>::cut_image(
+        const Cloud_t<Node_t>& cloud, const std::size_t symbol) const
 {
-    Cloud_t<Node> next{};
+    Cloud_t<Node_t> next{};
 
-    const auto collect{[&next](const Node& node) { next.push_back(node); }};
+    const auto collect{[&next](const Node_t& node) { next.push_back(node); }};
 
     for (const auto& node : cloud)
     {
@@ -2656,25 +2657,25 @@ Cloud_t<typename Product<Rules>::Node> Product<Rules>::cut_image(
 }
 
 template <typename Rules>
-bool Product<Rules>::holds(const Cloud_t<Node>& cloud) const
+bool Product<Rules>::holds(const Cloud_t<Node_t>& cloud) const
 {
-    const auto refuting{[this](const Node& node) { return std::ranges::binary_search(refuting_, node); }};
+    const auto refuting{[this](const Node_t& node) { return std::ranges::binary_search(refuting_, node); }};
 
     return std::ranges::none_of(cloud, refuting);
 }
 
 template <typename Rules>
-Cloud_t<typename Product<Rules>::Node> Product<Rules>::refuting_nodes() const
+Cloud_t<typename Product<Rules>::Node_t> Product<Rules>::refuting_nodes() const
 {
     const auto symbols{rules_.run.symbol_count()};
 
-    const auto step{[this]<typename Emit>(const Node& node, const std::size_t symbol, const Emit& emit) {
+    const auto step{[this]<typename Emit>(const Node_t& node, const std::size_t symbol, const Emit& emit) {
         rules_.step(node, symbol, emit);
     }};
 
     const auto after{reachable_from(at_zero_, symbols, step)};
 
-    const auto index_of{[&after](const Node& node) {
+    const auto index_of{[&after](const Node_t& node) {
         const auto found{std::ranges::lower_bound(after, node)};
 
         return static_cast<std::size_t>(std::ranges::distance(after.begin(), found));
@@ -2684,7 +2685,7 @@ Cloud_t<typename Product<Rules>::Node> Product<Rules>::refuting_nodes() const
 
     for (std::size_t from{0}; from < after.size(); ++from)
     {
-        const auto link{[&](const Node& next) { predecessors[index_of(next)].push_back(from); }};
+        const auto link{[&](const Node_t& next) { predecessors[index_of(next)].push_back(from); }};
 
         for (std::size_t symbol{0}; symbol < symbols; ++symbol)
         {
@@ -2725,7 +2726,7 @@ Cloud_t<typename Product<Rules>::Node> Product<Rules>::refuting_nodes() const
         }
     }
 
-    Cloud_t<Node> refuting{};
+    Cloud_t<Node_t> refuting{};
 
     for (std::size_t node{0}; node < after.size(); ++node)
     {

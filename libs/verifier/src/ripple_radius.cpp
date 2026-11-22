@@ -110,7 +110,7 @@ struct Trace_place
  * @brief The places of a run, one per merge and one more: the trace of a canonical token is the run on the token alone,
  *        from its symbols to the token, and a token that is not canonical has none.
  */
-using Trace = std::vector<Trace_place>;
+using Trace_t = std::vector<Trace_place>;
 
 /**
  * @brief The merges taken in rank order: the useful ones before the first effective self-pair, the trace of every
@@ -131,7 +131,7 @@ struct Stages
     /**
      * @brief The trace of each token, by token, empty for a token that is not canonical.
      */
-    std::vector<Trace> traces{};
+    std::vector<Trace_t> traces{};
 
     /**
      * @brief The rank of the first useful merge with equal parts, the effective self-pair.
@@ -169,7 +169,7 @@ struct Trie_node
 /**
  * @brief The trie of the canonical tokens, the root first.
  */
-using Trie = std::vector<Trie_node>;
+using Trie_t = std::vector<Trie_node>;
 
 /**
  * @brief The canonical tokens of a table with no effective self-pair, with what the encoding and the graph read.
@@ -189,7 +189,7 @@ struct Vocabulary
     /**
      * @brief The trace of each token, by token, empty for a token that is not canonical.
      */
-    std::vector<Trace> traces{};
+    std::vector<Trace_t> traces{};
 
     /**
      * @brief The symbols the table names, ascending.
@@ -210,7 +210,7 @@ struct Vocabulary
     /**
      * @brief The trie of the canonical tokens' spellings.
      */
-    Trie trie{};
+    Trie_t trie{};
 };
 
 /**
@@ -618,7 +618,7 @@ struct Explored_radius
  * @return The places of the run on the two tokens' spelling, the last at the two tokens with no merge next, or
  *         std::nullopt when a merge crosses the join.
  */
-[[nodiscard]] std::optional<Trace> joined(const Trace& left, const Trace& right, const Ranks_t& ranks)
+[[nodiscard]] std::optional<Trace_t> joined(const Trace_t& left, const Trace_t& right, const Ranks_t& ranks)
 {
     const auto rank_of{[&ranks](const Token_t first, const Token_t second) {
         const auto found{ranks.find({first, second})};
@@ -636,7 +636,7 @@ struct Explored_radius
     std::size_t in_left{0};
     std::size_t in_right{0};
 
-    Trace places{{.first = left.front().first, .last = right.front().last, .next = no_merge}};
+    Trace_t places{{.first = left.front().first, .last = right.front().last, .next = no_merge}};
 
     for (;;)
     {
@@ -692,7 +692,7 @@ struct Explored_radius
     Stages stages{
             .useful = {},
             .ranks = {},
-            .traces = std::vector<Trace>(symbol_count + table.lefts.size()),
+            .traces = std::vector<Trace_t>(symbol_count + table.lefts.size()),
             .self_pair = std::nullopt};
 
     for (Token_t symbol{0}; symbol < symbol_count; ++symbol)
@@ -747,7 +747,7 @@ struct Explored_radius
  * @param spelling The token's spelling.
  * @param token The token, past every token added before it.
  */
-void add_token(Trie& trie, const std::string_view spelling, const Token_t token)
+void add_token(Trie_t& trie, const std::string_view spelling, const Token_t token)
 {
     std::size_t node{0};
 
@@ -775,7 +775,7 @@ void add_token(Trie& trie, const std::string_view spelling, const Token_t token)
  *        token, each node numbered after its parent.
  * @param trie The trie, every token added.
  */
-void list_prefixes(Trie& trie)
+void list_prefixes(Trie_t& trie)
 {
     for (std::size_t node{0}; node < trie.size(); ++node)
     {
@@ -812,7 +812,7 @@ void list_prefixes(Trie& trie)
  */
 [[nodiscard]] Vocabulary vocabulary_of(
         const Table& table, const std::span<const Merge> merges, std::vector<std::string> spellings,
-        const std::span<const std::size_t> useful, Ranks_t ranks, std::vector<Trace> traces)
+        const std::span<const std::size_t> useful, Ranks_t ranks, std::vector<Trace_t> traces)
 {
     std::vector<bool> named(table.symbols.size(), false);
 
@@ -835,7 +835,7 @@ void list_prefixes(Trie& trie)
             .named = {},
             .places = std::vector<std::size_t>(token_count, 0),
             .count = 0,
-            .trie = Trie(1)};
+            .trie = Trie_t(1)};
 
     const auto add_canonical{[&vocabulary](const Token_t token) {
         vocabulary.places[token] = vocabulary.count;
@@ -892,7 +892,7 @@ void list_prefixes(Trie& trie)
  * @param text The text, nonempty.
  * @return The tokens, none when no token begins with the text.
  */
-[[nodiscard]] std::span<const Token_t> beginning_with(const Trie& trie, const std::string_view text)
+[[nodiscard]] std::span<const Token_t> beginning_with(const Trie_t& trie, const std::string_view text)
 {
     std::size_t node{0};
 
@@ -918,7 +918,7 @@ void list_prefixes(Trie& trie)
  * @param text The text, nonempty.
  * @return The tokens.
  */
-[[nodiscard]] std::vector<Token_t> comparable_to(const Trie& trie, const std::string_view text)
+[[nodiscard]] std::vector<Token_t> comparable_to(const Trie_t& trie, const std::string_view text)
 {
     std::size_t node{0};
 

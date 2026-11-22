@@ -110,7 +110,7 @@ constexpr std::string_view beyond_ascii_source{
  * @param point The code point.
  * @return The class holding it alone.
  */
-[[nodiscard]] Class one_point(const char32_t point)
+[[nodiscard]] Class_t one_point(const char32_t point)
 {
     return {{.first = point, .last = point}};
 }
@@ -229,7 +229,7 @@ Regex_text Regex_reader::regex_text(const pattern::Definitions_t& definitions)
     // The regex is a class where its alternatives, at the top level, are each one class atom, as re2c merges them.
     const auto whole{levels_.size() == 1 && levels_.front().classes};
 
-    std::optional<Class> points{};
+    std::optional<Class_t> points{};
 
     if (whole)
     {
@@ -306,7 +306,7 @@ bool Regex_reader::take_reference()
     return true;
 }
 
-void Regex_reader::place(std::optional<Class> points)
+void Regex_reader::place(std::optional<Class_t> points)
 {
     auto& level{levels_.back()};
 
@@ -315,7 +315,7 @@ void Regex_reader::place(std::optional<Class> points)
     ++level.atoms;
 }
 
-std::optional<Class> Regex_reader::defined(const std::string_view name) const
+std::optional<Class_t> Regex_reader::defined(const std::string_view name) const
 {
     const auto found{classes_.find(name)};
 
@@ -557,10 +557,10 @@ Regex_reader::Rewritten_literal Regex_reader::literal(const char quote, const bo
     // The characters read, and the class of the first, which is the literal's where it is the only one.
     std::size_t characters{0};
 
-    Class first{};
+    Class_t first{};
 
     // Counts a character read and keeps the class of the first.
-    const auto character{[&characters, &first](Class points) {
+    const auto character{[&characters, &first](Class_t points) {
         ++characters;
 
         if (characters == 1)
@@ -604,7 +604,7 @@ Regex_reader::Rewritten_literal Regex_reader::literal(const char quote, const bo
 
             expression += std::format("[{}{}]", lower, upper);
 
-            Class both_cases{
+            Class_t both_cases{
                     {.first = static_cast<char32_t>(upper), .last = static_cast<char32_t>(upper)},
                     {.first = static_cast<char32_t>(lower), .last = static_cast<char32_t>(lower)}};
 
@@ -627,7 +627,7 @@ Regex_reader::Rewritten_literal Regex_reader::literal(const char quote, const bo
         fail("an empty quoted literal matches nothing");
     }
 
-    std::optional<Class> points{};
+    std::optional<Class_t> points{};
 
     if (characters == 1)
     {
@@ -731,7 +731,7 @@ bool Regex_reader::take_name()
     {
         expression_ += name;
 
-        std::optional<Class> points{};
+        std::optional<Class_t> points{};
 
         if (name.size() == 1)
         {
@@ -764,7 +764,7 @@ bool Regex_reader::take_dot()
     pattern_.push_back('.');
 
     // re2c's dot is any code point but the newline, which under UTF-8 is every encoding but that byte's.
-    Class points{{.first = 0, .last = U'\n' - 1}, {.first = U'\n' + 1, .last = code_space(flags_.encoding) - 1}};
+    Class_t points{{.first = 0, .last = U'\n' - 1}, {.first = U'\n' + 1, .last = code_space(flags_.encoding) - 1}};
 
     expression_ += in_utf8() ? step(points) : std::string{'.'};
 
@@ -963,7 +963,7 @@ void Regex_reader::close_group()
 
     expression_.push_back(')');
 
-    std::optional<Class> points{};
+    std::optional<Class_t> points{};
 
     if (group.classes)
     {

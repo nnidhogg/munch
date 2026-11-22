@@ -16,14 +16,14 @@ using namespace munch::regex;
 /**
  * @brief A match the NFA simulator reports.
  */
-using Match = Simulator::Match;
+using Match_t = Simulator::Match;
 
 namespace
 {
 /**
  * @brief The match of a scan that matched nothing.
  */
-const Match no_match{.token = std::nullopt, .length = 0};
+const Match_t no_match{.token = std::nullopt, .length = 0};
 
 /**
  * @brief Returns the number of states a builder's initial state reaches on a symbol.
@@ -77,7 +77,7 @@ Nfa expect_matches_exactly_its_members(const Set& set, const Token& token)
 
     for (const auto symbol : set.symbols())
     {
-        EXPECT_EQ(Simulator::run(nfa, std::string{symbol}), (Match{.token = token, .length = 1}));
+        EXPECT_EQ(Simulator::run(nfa, std::string{symbol}), (Match_t{.token = token, .length = 1}));
     }
 
     const auto others{Set::all() - set};
@@ -98,9 +98,9 @@ TEST(Any_of_test, A_single_member_matches_one_byte_and_nothing_else)
 
     const auto nfa{expect_matches_exactly_its_members(Set{'a'}, token)};
 
-    EXPECT_EQ(Simulator::run(nfa, "ab"), (Match{.token = token, .length = 1}));
-    EXPECT_EQ(Simulator::run(nfa, "abc"), (Match{.token = token, .length = 1}));
-    EXPECT_EQ(Simulator::run(nfa, "a.b.c"), (Match{.token = token, .length = 1}));
+    EXPECT_EQ(Simulator::run(nfa, "ab"), (Match_t{.token = token, .length = 1}));
+    EXPECT_EQ(Simulator::run(nfa, "abc"), (Match_t{.token = token, .length = 1}));
+    EXPECT_EQ(Simulator::run(nfa, "a.b.c"), (Match_t{.token = token, .length = 1}));
 
     EXPECT_EQ(Simulator::run(nfa, ""), no_match);
     EXPECT_EQ(Simulator::run(nfa, "ba"), no_match);
@@ -121,12 +121,12 @@ TEST(Any_of_test, Three_members_each_match_one_byte)
 
     const auto nfa{expect_matches_exactly_its_members(Set{'a', 'b', 'c'}, token)};
 
-    EXPECT_EQ(Simulator::run(nfa, "ab"), (Match{.token = token, .length = 1}));
-    EXPECT_EQ(Simulator::run(nfa, "ba"), (Match{.token = token, .length = 1}));
-    EXPECT_EQ(Simulator::run(nfa, "abc"), (Match{.token = token, .length = 1}));
-    EXPECT_EQ(Simulator::run(nfa, "cba"), (Match{.token = token, .length = 1}));
-    EXPECT_EQ(Simulator::run(nfa, "bac"), (Match{.token = token, .length = 1}));
-    EXPECT_EQ(Simulator::run(nfa, "a.b.c"), (Match{.token = token, .length = 1}));
+    EXPECT_EQ(Simulator::run(nfa, "ab"), (Match_t{.token = token, .length = 1}));
+    EXPECT_EQ(Simulator::run(nfa, "ba"), (Match_t{.token = token, .length = 1}));
+    EXPECT_EQ(Simulator::run(nfa, "abc"), (Match_t{.token = token, .length = 1}));
+    EXPECT_EQ(Simulator::run(nfa, "cba"), (Match_t{.token = token, .length = 1}));
+    EXPECT_EQ(Simulator::run(nfa, "bac"), (Match_t{.token = token, .length = 1}));
+    EXPECT_EQ(Simulator::run(nfa, "a.b.c"), (Match_t{.token = token, .length = 1}));
 
     EXPECT_EQ(Simulator::run(nfa, ""), no_match);
     EXPECT_EQ(Simulator::run(nfa, "123"), no_match);
@@ -144,12 +144,12 @@ TEST(Any_of_test, The_letters_each_match_one_byte)
 
     const auto nfa{expect_matches_exactly_its_members(Set::alpha(), token)};
 
-    EXPECT_EQ(Simulator::run(nfa, "ab"), (Match{.token = token, .length = 1}));
-    EXPECT_EQ(Simulator::run(nfa, "ba"), (Match{.token = token, .length = 1}));
-    EXPECT_EQ(Simulator::run(nfa, "abc"), (Match{.token = token, .length = 1}));
-    EXPECT_EQ(Simulator::run(nfa, "cba"), (Match{.token = token, .length = 1}));
-    EXPECT_EQ(Simulator::run(nfa, "bac"), (Match{.token = token, .length = 1}));
-    EXPECT_EQ(Simulator::run(nfa, "a.b.c"), (Match{.token = token, .length = 1}));
+    EXPECT_EQ(Simulator::run(nfa, "ab"), (Match_t{.token = token, .length = 1}));
+    EXPECT_EQ(Simulator::run(nfa, "ba"), (Match_t{.token = token, .length = 1}));
+    EXPECT_EQ(Simulator::run(nfa, "abc"), (Match_t{.token = token, .length = 1}));
+    EXPECT_EQ(Simulator::run(nfa, "cba"), (Match_t{.token = token, .length = 1}));
+    EXPECT_EQ(Simulator::run(nfa, "bac"), (Match_t{.token = token, .length = 1}));
+    EXPECT_EQ(Simulator::run(nfa, "a.b.c"), (Match_t{.token = token, .length = 1}));
 
     EXPECT_EQ(Simulator::run(nfa, ""), no_match);
     EXPECT_EQ(Simulator::run(nfa, "123"), no_match);
@@ -167,7 +167,7 @@ TEST(Any_of_test, The_digits_each_match_one_byte)
 
     const auto nfa{expect_matches_exactly_its_members(Set::digits(), token)};
 
-    EXPECT_EQ(Simulator::run(nfa, "123"), (Match{.token = token, .length = 1}));
+    EXPECT_EQ(Simulator::run(nfa, "123"), (Match_t{.token = token, .length = 1}));
 
     EXPECT_EQ(Simulator::run(nfa, ""), no_match);
     EXPECT_EQ(Simulator::run(nfa, "ab"), no_match);
@@ -190,13 +190,13 @@ TEST(Any_of_test, The_letters_and_digits_each_match_one_byte)
 
     const auto nfa{expect_matches_exactly_its_members(Set::alphanum(), token)};
 
-    EXPECT_EQ(Simulator::run(nfa, "ab"), (Match{.token = token, .length = 1}));
-    EXPECT_EQ(Simulator::run(nfa, "ba"), (Match{.token = token, .length = 1}));
-    EXPECT_EQ(Simulator::run(nfa, "abc"), (Match{.token = token, .length = 1}));
-    EXPECT_EQ(Simulator::run(nfa, "cba"), (Match{.token = token, .length = 1}));
-    EXPECT_EQ(Simulator::run(nfa, "bac"), (Match{.token = token, .length = 1}));
-    EXPECT_EQ(Simulator::run(nfa, "123"), (Match{.token = token, .length = 1}));
-    EXPECT_EQ(Simulator::run(nfa, "a.b.c"), (Match{.token = token, .length = 1}));
+    EXPECT_EQ(Simulator::run(nfa, "ab"), (Match_t{.token = token, .length = 1}));
+    EXPECT_EQ(Simulator::run(nfa, "ba"), (Match_t{.token = token, .length = 1}));
+    EXPECT_EQ(Simulator::run(nfa, "abc"), (Match_t{.token = token, .length = 1}));
+    EXPECT_EQ(Simulator::run(nfa, "cba"), (Match_t{.token = token, .length = 1}));
+    EXPECT_EQ(Simulator::run(nfa, "bac"), (Match_t{.token = token, .length = 1}));
+    EXPECT_EQ(Simulator::run(nfa, "123"), (Match_t{.token = token, .length = 1}));
+    EXPECT_EQ(Simulator::run(nfa, "a.b.c"), (Match_t{.token = token, .length = 1}));
 
     EXPECT_EQ(Simulator::run(nfa, ""), no_match);
     EXPECT_EQ(Simulator::run(nfa, "*[=]"), no_match);
@@ -213,14 +213,14 @@ TEST(Any_of_test, The_printable_bytes_each_match_one_byte)
 
     const auto nfa{expect_matches_exactly_its_members(Set::printable(), token)};
 
-    EXPECT_EQ(Simulator::run(nfa, "ab"), (Match{.token = token, .length = 1}));
-    EXPECT_EQ(Simulator::run(nfa, "ba"), (Match{.token = token, .length = 1}));
-    EXPECT_EQ(Simulator::run(nfa, "abc"), (Match{.token = token, .length = 1}));
-    EXPECT_EQ(Simulator::run(nfa, "cba"), (Match{.token = token, .length = 1}));
-    EXPECT_EQ(Simulator::run(nfa, "bac"), (Match{.token = token, .length = 1}));
-    EXPECT_EQ(Simulator::run(nfa, "123"), (Match{.token = token, .length = 1}));
-    EXPECT_EQ(Simulator::run(nfa, "*[=]"), (Match{.token = token, .length = 1}));
-    EXPECT_EQ(Simulator::run(nfa, "a.b.c"), (Match{.token = token, .length = 1}));
+    EXPECT_EQ(Simulator::run(nfa, "ab"), (Match_t{.token = token, .length = 1}));
+    EXPECT_EQ(Simulator::run(nfa, "ba"), (Match_t{.token = token, .length = 1}));
+    EXPECT_EQ(Simulator::run(nfa, "abc"), (Match_t{.token = token, .length = 1}));
+    EXPECT_EQ(Simulator::run(nfa, "cba"), (Match_t{.token = token, .length = 1}));
+    EXPECT_EQ(Simulator::run(nfa, "bac"), (Match_t{.token = token, .length = 1}));
+    EXPECT_EQ(Simulator::run(nfa, "123"), (Match_t{.token = token, .length = 1}));
+    EXPECT_EQ(Simulator::run(nfa, "*[=]"), (Match_t{.token = token, .length = 1}));
+    EXPECT_EQ(Simulator::run(nfa, "a.b.c"), (Match_t{.token = token, .length = 1}));
 
     EXPECT_EQ(Simulator::run(nfa, ""), no_match);
 }
@@ -239,15 +239,15 @@ TEST(Any_of_test, Every_byte_matches_alone)
     // A string literal's terminating NUL is input like any other byte, and the NUL byte is a member of every byte.
     const std::string nul_byte{'\0'};
 
-    EXPECT_EQ(Simulator::run(nfa, nul_byte), (Match{.token = token, .length = 1}));
-    EXPECT_EQ(Simulator::run(nfa, "ab"), (Match{.token = token, .length = 1}));
-    EXPECT_EQ(Simulator::run(nfa, "ba"), (Match{.token = token, .length = 1}));
-    EXPECT_EQ(Simulator::run(nfa, "abc"), (Match{.token = token, .length = 1}));
-    EXPECT_EQ(Simulator::run(nfa, "cba"), (Match{.token = token, .length = 1}));
-    EXPECT_EQ(Simulator::run(nfa, "bac"), (Match{.token = token, .length = 1}));
-    EXPECT_EQ(Simulator::run(nfa, "123"), (Match{.token = token, .length = 1}));
-    EXPECT_EQ(Simulator::run(nfa, "*[=]"), (Match{.token = token, .length = 1}));
-    EXPECT_EQ(Simulator::run(nfa, "a.b.c"), (Match{.token = token, .length = 1}));
+    EXPECT_EQ(Simulator::run(nfa, nul_byte), (Match_t{.token = token, .length = 1}));
+    EXPECT_EQ(Simulator::run(nfa, "ab"), (Match_t{.token = token, .length = 1}));
+    EXPECT_EQ(Simulator::run(nfa, "ba"), (Match_t{.token = token, .length = 1}));
+    EXPECT_EQ(Simulator::run(nfa, "abc"), (Match_t{.token = token, .length = 1}));
+    EXPECT_EQ(Simulator::run(nfa, "cba"), (Match_t{.token = token, .length = 1}));
+    EXPECT_EQ(Simulator::run(nfa, "bac"), (Match_t{.token = token, .length = 1}));
+    EXPECT_EQ(Simulator::run(nfa, "123"), (Match_t{.token = token, .length = 1}));
+    EXPECT_EQ(Simulator::run(nfa, "*[=]"), (Match_t{.token = token, .length = 1}));
+    EXPECT_EQ(Simulator::run(nfa, "a.b.c"), (Match_t{.token = token, .length = 1}));
 }
 
 TEST(Any_of_test, The_empty_set_matches_nothing)

@@ -115,12 +115,12 @@ struct Node
 /**
  * @brief The trie of one mode's tokens, the root first.
  */
-using Trie = std::vector<Node>;
+using Trie_t = std::vector<Node>;
 
 /**
  * @brief The two tries, the initial tokens' then the continuation tokens'.
  */
-using Tries = std::array<Trie, 2>;
+using Tries_t = std::array<Trie_t, 2>;
 
 /**
  * @brief A state of the verifier: the oldest armed run, whose node spells the tail, and the depth inside the tail at
@@ -183,7 +183,7 @@ struct Runs
  * @param trie The trie, extended in place.
  * @param token The token.
  */
-void add_token(Trie& trie, const std::string_view token)
+void add_token(Trie_t& trie, const std::string_view token)
 {
     Node_t node{0};
 
@@ -211,9 +211,9 @@ void add_token(Trie& trie, const std::string_view token)
  * @return The trie.
  * @throws std::invalid_argument If a token is empty.
  */
-[[nodiscard]] Trie build_trie(const std::span<const std::string> tokens, const std::string_view mode_name)
+[[nodiscard]] Trie_t build_trie(const std::span<const std::string> tokens, const std::string_view mode_name)
 {
-    Trie trie{Node{}};
+    Trie_t trie{Node{}};
 
     for (std::size_t index{0}; index < tokens.size(); ++index)
     {
@@ -234,7 +234,7 @@ void add_token(Trie& trie, const std::string_view token)
  * @param text The text.
  * @return The node, or std::nullopt when a byte has no child.
  */
-[[nodiscard]] std::optional<Node_t> walk(const Trie& trie, const std::string_view text)
+[[nodiscard]] std::optional<Node_t> walk(const Trie_t& trie, const std::string_view text)
 {
     std::optional<Node_t> node{0};
 
@@ -252,7 +252,7 @@ void add_token(Trie& trie, const std::string_view token)
  * @param text The text.
  * @return The length, zero when no token is a prefix.
  */
-[[nodiscard]] std::size_t longest(const Trie& trie, const std::string_view text)
+[[nodiscard]] std::size_t longest(const Trie_t& trie, const std::string_view text)
 {
     std::size_t best{0};
 
@@ -317,7 +317,7 @@ private:
      * @param mode The mode.
      * @return The mode's trie.
      */
-    [[nodiscard]] const Trie& trie_of(Mode mode) const noexcept;
+    [[nodiscard]] const Trie_t& trie_of(Mode mode) const noexcept;
 
     /**
      * @brief Returns the verifier state of a state, interning it as a new one when it is first found.
@@ -384,7 +384,7 @@ private:
     /**
      * @brief The two tries.
      */
-    Tries tries_{};
+    Tries_t tries_{};
 
     /**
      * @brief The state each verifier state reads as, by verifier state.
@@ -453,7 +453,7 @@ std::vector<Link> Exploration::chain_of(const Mode mode, const std::string_view 
     return chain;
 }
 
-const Trie& Exploration::trie_of(const Mode mode) const noexcept
+const Trie_t& Exploration::trie_of(const Mode mode) const noexcept
 {
     return tries_[std::to_underlying(mode)];
 }

@@ -1353,7 +1353,7 @@ void Block_reader::hold_unbound(const std::vector<std::string>& names, const boo
     unbound_ = Spec_error{message, line};
 }
 
-void Block_reader::define(Lexer_spec& spec, Definition_site site, std::string expression, std::optional<Class> points)
+void Block_reader::define(Lexer_spec& spec, Definition_site site, std::string expression, std::optional<Class_t> points)
 {
     // A name bound by no definition yet, or by this one seen again through a second use of its block, binds here.
     const auto bound{pass_.bound.contains(site.name) ? pass_.bound.at(site.name) : site.begin};

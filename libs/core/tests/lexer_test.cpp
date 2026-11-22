@@ -1517,19 +1517,19 @@ TEST_F(Lexer_test, Keywords_match_at_their_full_length)
 
     const auto lexer{builder.build()};
 
-    using Match = Lexer::Match<Token_kind>;
+    using Match_t = Lexer::Match<Token_kind>;
 
-    EXPECT_EQ(lexer.tokenize<Token_kind>("boolean"), (Match{.token = Token_kind::boolean, .length = 7}));
-    EXPECT_EQ(lexer.tokenize<Token_kind>("char"), (Match{.token = Token_kind::char_keyword, .length = 4}));
-    EXPECT_EQ(lexer.tokenize<Token_kind>("string"), (Match{.token = Token_kind::string, .length = 6}));
-    EXPECT_EQ(lexer.tokenize<Token_kind>("int8"), (Match{.token = Token_kind::int8, .length = 4}));
-    EXPECT_EQ(lexer.tokenize<Token_kind>("uint8"), (Match{.token = Token_kind::uint8, .length = 5}));
-    EXPECT_EQ(lexer.tokenize<Token_kind>("int16"), (Match{.token = Token_kind::int16, .length = 5}));
-    EXPECT_EQ(lexer.tokenize<Token_kind>("uint16"), (Match{.token = Token_kind::uint16, .length = 6}));
-    EXPECT_EQ(lexer.tokenize<Token_kind>("int32"), (Match{.token = Token_kind::int32, .length = 5}));
-    EXPECT_EQ(lexer.tokenize<Token_kind>("uint32"), (Match{.token = Token_kind::uint32, .length = 6}));
-    EXPECT_EQ(lexer.tokenize<Token_kind>("int64"), (Match{.token = Token_kind::int64, .length = 5}));
-    EXPECT_EQ(lexer.tokenize<Token_kind>("uint64"), (Match{.token = Token_kind::uint64, .length = 6}));
+    EXPECT_EQ(lexer.tokenize<Token_kind>("boolean"), (Match_t{.token = Token_kind::boolean, .length = 7}));
+    EXPECT_EQ(lexer.tokenize<Token_kind>("char"), (Match_t{.token = Token_kind::char_keyword, .length = 4}));
+    EXPECT_EQ(lexer.tokenize<Token_kind>("string"), (Match_t{.token = Token_kind::string, .length = 6}));
+    EXPECT_EQ(lexer.tokenize<Token_kind>("int8"), (Match_t{.token = Token_kind::int8, .length = 4}));
+    EXPECT_EQ(lexer.tokenize<Token_kind>("uint8"), (Match_t{.token = Token_kind::uint8, .length = 5}));
+    EXPECT_EQ(lexer.tokenize<Token_kind>("int16"), (Match_t{.token = Token_kind::int16, .length = 5}));
+    EXPECT_EQ(lexer.tokenize<Token_kind>("uint16"), (Match_t{.token = Token_kind::uint16, .length = 6}));
+    EXPECT_EQ(lexer.tokenize<Token_kind>("int32"), (Match_t{.token = Token_kind::int32, .length = 5}));
+    EXPECT_EQ(lexer.tokenize<Token_kind>("uint32"), (Match_t{.token = Token_kind::uint32, .length = 6}));
+    EXPECT_EQ(lexer.tokenize<Token_kind>("int64"), (Match_t{.token = Token_kind::int64, .length = 5}));
+    EXPECT_EQ(lexer.tokenize<Token_kind>("uint64"), (Match_t{.token = Token_kind::uint64, .length = 6}));
 }
 
 TEST_F(Lexer_test, Identifiers_match_letters_digits_and_underscores)
@@ -1552,14 +1552,15 @@ TEST_F(Lexer_test, Identifiers_match_letters_digits_and_underscores)
 
     const auto lexer{builder.build()};
 
-    using Match = Lexer::Match<Token_kind>;
+    using Match_t = Lexer::Match<Token_kind>;
 
-    EXPECT_EQ(lexer.tokenize<Token_kind>("variable_name"), (Match{.token = Token_kind::identifier, .length = 13}));
-    EXPECT_EQ(lexer.tokenize<Token_kind>("_someVar"), (Match{.token = Token_kind::identifier, .length = 8}));
-    EXPECT_EQ(lexer.tokenize<Token_kind>("MyVariable123"), (Match{.token = Token_kind::identifier, .length = 13}));
-    EXPECT_EQ(lexer.tokenize<Token_kind>("__Another_var__99"), (Match{.token = Token_kind::identifier, .length = 17}));
-    EXPECT_EQ(lexer.tokenize<Token_kind>("camelCase"), (Match{.token = Token_kind::identifier, .length = 9}));
-    EXPECT_EQ(lexer.tokenize<Token_kind>("___"), (Match{.token = Token_kind::identifier, .length = 3}));
+    EXPECT_EQ(lexer.tokenize<Token_kind>("variable_name"), (Match_t{.token = Token_kind::identifier, .length = 13}));
+    EXPECT_EQ(lexer.tokenize<Token_kind>("_someVar"), (Match_t{.token = Token_kind::identifier, .length = 8}));
+    EXPECT_EQ(lexer.tokenize<Token_kind>("MyVariable123"), (Match_t{.token = Token_kind::identifier, .length = 13}));
+    EXPECT_EQ(
+            lexer.tokenize<Token_kind>("__Another_var__99"), (Match_t{.token = Token_kind::identifier, .length = 17}));
+    EXPECT_EQ(lexer.tokenize<Token_kind>("camelCase"), (Match_t{.token = Token_kind::identifier, .length = 9}));
+    EXPECT_EQ(lexer.tokenize<Token_kind>("___"), (Match_t{.token = Token_kind::identifier, .length = 3}));
 }
 
 TEST_F(Lexer_test, Integer_literals_match_every_digit)
@@ -1582,13 +1583,13 @@ TEST_F(Lexer_test, Integer_literals_match_every_digit)
 
     const auto lexer{builder.build()};
 
-    using Match = Lexer::Match<Token_kind>;
+    using Match_t = Lexer::Match<Token_kind>;
 
-    EXPECT_EQ(lexer.tokenize<Token_kind>("123"), (Match{.token = Token_kind::integer_literal, .length = 3}));
-    EXPECT_EQ(lexer.tokenize<Token_kind>("007"), (Match{.token = Token_kind::integer_literal, .length = 3}));
-    EXPECT_EQ(lexer.tokenize<Token_kind>("1234567890"), (Match{.token = Token_kind::integer_literal, .length = 10}));
-    EXPECT_EQ(lexer.tokenize<Token_kind>("5"), (Match{.token = Token_kind::integer_literal, .length = 1}));
-    EXPECT_EQ(lexer.tokenize<Token_kind>("0"), (Match{.token = Token_kind::integer_literal, .length = 1}));
+    EXPECT_EQ(lexer.tokenize<Token_kind>("123"), (Match_t{.token = Token_kind::integer_literal, .length = 3}));
+    EXPECT_EQ(lexer.tokenize<Token_kind>("007"), (Match_t{.token = Token_kind::integer_literal, .length = 3}));
+    EXPECT_EQ(lexer.tokenize<Token_kind>("1234567890"), (Match_t{.token = Token_kind::integer_literal, .length = 10}));
+    EXPECT_EQ(lexer.tokenize<Token_kind>("5"), (Match_t{.token = Token_kind::integer_literal, .length = 1}));
+    EXPECT_EQ(lexer.tokenize<Token_kind>("0"), (Match_t{.token = Token_kind::integer_literal, .length = 1}));
 }
 
 TEST_F(Lexer_test, String_literals_match_through_the_closing_quote)
@@ -1611,13 +1612,15 @@ TEST_F(Lexer_test, String_literals_match_through_the_closing_quote)
 
     const auto lexer{builder.build()};
 
-    using Match = Lexer::Match<Token_kind>;
+    using Match_t = Lexer::Match<Token_kind>;
 
-    EXPECT_EQ(lexer.tokenize<Token_kind>(R"("Hello")"), (Match{.token = Token_kind::string_literal, .length = 7}));
-    EXPECT_EQ(lexer.tokenize<Token_kind>(R"("")"), (Match{.token = Token_kind::string_literal, .length = 2}));
+    EXPECT_EQ(lexer.tokenize<Token_kind>(R"("Hello")"), (Match_t{.token = Token_kind::string_literal, .length = 7}));
+    EXPECT_EQ(lexer.tokenize<Token_kind>(R"("")"), (Match_t{.token = Token_kind::string_literal, .length = 2}));
     EXPECT_EQ(
-            lexer.tokenize<Token_kind>(R"("Hello world")"), (Match{.token = Token_kind::string_literal, .length = 13}));
-    EXPECT_EQ(lexer.tokenize<Token_kind>(R"("\"Quote\"")"), (Match{.token = Token_kind::string_literal, .length = 11}));
+            lexer.tokenize<Token_kind>(R"("Hello world")"),
+            (Match_t{.token = Token_kind::string_literal, .length = 13}));
+    EXPECT_EQ(
+            lexer.tokenize<Token_kind>(R"("\"Quote\"")"), (Match_t{.token = Token_kind::string_literal, .length = 11}));
 }
 
 TEST_F(Lexer_test, Fixed_point_literals_need_digits_on_both_sides_of_the_dot)
@@ -1640,11 +1643,11 @@ TEST_F(Lexer_test, Fixed_point_literals_need_digits_on_both_sides_of_the_dot)
 
     const auto lexer{builder.build()};
 
-    using Match = Lexer::Match<Token_kind>;
+    using Match_t = Lexer::Match<Token_kind>;
 
-    EXPECT_EQ(lexer.tokenize<Token_kind>("1.2"), (Match{.token = Token_kind::fixed_point_literal, .length = 3}));
-    EXPECT_EQ(lexer.tokenize<Token_kind>("3.14"), (Match{.token = Token_kind::fixed_point_literal, .length = 4}));
-    EXPECT_EQ(lexer.tokenize<Token_kind>("123.456"), (Match{.token = Token_kind::fixed_point_literal, .length = 7}));
+    EXPECT_EQ(lexer.tokenize<Token_kind>("1.2"), (Match_t{.token = Token_kind::fixed_point_literal, .length = 3}));
+    EXPECT_EQ(lexer.tokenize<Token_kind>("3.14"), (Match_t{.token = Token_kind::fixed_point_literal, .length = 4}));
+    EXPECT_EQ(lexer.tokenize<Token_kind>("123.456"), (Match_t{.token = Token_kind::fixed_point_literal, .length = 7}));
 
     EXPECT_EQ(lexer.tokenize<Token_kind>("."), no_match<Token_kind>);
     EXPECT_EQ(lexer.tokenize<Token_kind>(".1"), no_match<Token_kind>);
@@ -1671,14 +1674,16 @@ TEST_F(Lexer_test, Floating_point_literals_match_signs_fractions_and_exponents)
 
     const auto lexer{builder.build()};
 
-    using Match = Lexer::Match<Token_kind>;
+    using Match_t = Lexer::Match<Token_kind>;
 
-    EXPECT_EQ(lexer.tokenize<Token_kind>("3.14159"), (Match{.token = Token_kind::floating_point_literal, .length = 7}));
-    EXPECT_EQ(lexer.tokenize<Token_kind>("2e10"), (Match{.token = Token_kind::floating_point_literal, .length = 4}));
     EXPECT_EQ(
-            lexer.tokenize<Token_kind>("-1.23E-4"), (Match{.token = Token_kind::floating_point_literal, .length = 8}));
-    EXPECT_EQ(lexer.tokenize<Token_kind>("+0.5"), (Match{.token = Token_kind::floating_point_literal, .length = 4}));
-    EXPECT_EQ(lexer.tokenize<Token_kind>("1e-10"), (Match{.token = Token_kind::floating_point_literal, .length = 5}));
+            lexer.tokenize<Token_kind>("3.14159"), (Match_t{.token = Token_kind::floating_point_literal, .length = 7}));
+    EXPECT_EQ(lexer.tokenize<Token_kind>("2e10"), (Match_t{.token = Token_kind::floating_point_literal, .length = 4}));
+    EXPECT_EQ(
+            lexer.tokenize<Token_kind>("-1.23E-4"),
+            (Match_t{.token = Token_kind::floating_point_literal, .length = 8}));
+    EXPECT_EQ(lexer.tokenize<Token_kind>("+0.5"), (Match_t{.token = Token_kind::floating_point_literal, .length = 4}));
+    EXPECT_EQ(lexer.tokenize<Token_kind>("1e-10"), (Match_t{.token = Token_kind::floating_point_literal, .length = 5}));
 }
 
 TEST_F(Lexer_test, Wide_string_literals_match_after_the_l_prefix)
@@ -1701,17 +1706,18 @@ TEST_F(Lexer_test, Wide_string_literals_match_after_the_l_prefix)
 
     const auto lexer{builder.build()};
 
-    using Match = Lexer::Match<Token_kind>;
+    using Match_t = Lexer::Match<Token_kind>;
 
     EXPECT_EQ(
-            lexer.tokenize<Token_kind>(R"(L"Hello")"), (Match{.token = Token_kind::wide_string_literal, .length = 8}));
-    EXPECT_EQ(lexer.tokenize<Token_kind>(R"(L"")"), (Match{.token = Token_kind::wide_string_literal, .length = 3}));
+            lexer.tokenize<Token_kind>(R"(L"Hello")"),
+            (Match_t{.token = Token_kind::wide_string_literal, .length = 8}));
+    EXPECT_EQ(lexer.tokenize<Token_kind>(R"(L"")"), (Match_t{.token = Token_kind::wide_string_literal, .length = 3}));
     EXPECT_EQ(
             lexer.tokenize<Token_kind>(R"(L"Wide world")"),
-            (Match{.token = Token_kind::wide_string_literal, .length = 13}));
+            (Match_t{.token = Token_kind::wide_string_literal, .length = 13}));
     EXPECT_EQ(
             lexer.tokenize<Token_kind>(R"(L"\"Escaped\"")"),
-            (Match{.token = Token_kind::wide_string_literal, .length = 14}));
+            (Match_t{.token = Token_kind::wide_string_literal, .length = 14}));
 }
 
 TEST_F(Lexer_test, Character_literals_match_one_quoted_character)
@@ -1734,12 +1740,12 @@ TEST_F(Lexer_test, Character_literals_match_one_quoted_character)
 
     const auto lexer{builder.build()};
 
-    using Match = Lexer::Match<Token_kind>;
+    using Match_t = Lexer::Match<Token_kind>;
 
-    EXPECT_EQ(lexer.tokenize<Token_kind>("'a'"), (Match{.token = Token_kind::character_literal, .length = 3}));
-    EXPECT_EQ(lexer.tokenize<Token_kind>("' '"), (Match{.token = Token_kind::character_literal, .length = 3}));
-    EXPECT_EQ(lexer.tokenize<Token_kind>("'\n'"), (Match{.token = Token_kind::character_literal, .length = 3}));
-    EXPECT_EQ(lexer.tokenize<Token_kind>("'''"), (Match{.token = Token_kind::character_literal, .length = 3}));
+    EXPECT_EQ(lexer.tokenize<Token_kind>("'a'"), (Match_t{.token = Token_kind::character_literal, .length = 3}));
+    EXPECT_EQ(lexer.tokenize<Token_kind>("' '"), (Match_t{.token = Token_kind::character_literal, .length = 3}));
+    EXPECT_EQ(lexer.tokenize<Token_kind>("'\n'"), (Match_t{.token = Token_kind::character_literal, .length = 3}));
+    EXPECT_EQ(lexer.tokenize<Token_kind>("'''"), (Match_t{.token = Token_kind::character_literal, .length = 3}));
 }
 
 TEST_F(Lexer_test, Wide_character_literals_match_after_the_l_prefix)
@@ -1762,12 +1768,12 @@ TEST_F(Lexer_test, Wide_character_literals_match_after_the_l_prefix)
 
     const auto lexer{builder.build()};
 
-    using Match = Lexer::Match<Token_kind>;
+    using Match_t = Lexer::Match<Token_kind>;
 
-    EXPECT_EQ(lexer.tokenize<Token_kind>("L'a'"), (Match{.token = Token_kind::wide_character_literal, .length = 4}));
-    EXPECT_EQ(lexer.tokenize<Token_kind>("L' '"), (Match{.token = Token_kind::wide_character_literal, .length = 4}));
-    EXPECT_EQ(lexer.tokenize<Token_kind>("L'\n'"), (Match{.token = Token_kind::wide_character_literal, .length = 4}));
-    EXPECT_EQ(lexer.tokenize<Token_kind>("L'''"), (Match{.token = Token_kind::wide_character_literal, .length = 4}));
+    EXPECT_EQ(lexer.tokenize<Token_kind>("L'a'"), (Match_t{.token = Token_kind::wide_character_literal, .length = 4}));
+    EXPECT_EQ(lexer.tokenize<Token_kind>("L' '"), (Match_t{.token = Token_kind::wide_character_literal, .length = 4}));
+    EXPECT_EQ(lexer.tokenize<Token_kind>("L'\n'"), (Match_t{.token = Token_kind::wide_character_literal, .length = 4}));
+    EXPECT_EQ(lexer.tokenize<Token_kind>("L'''"), (Match_t{.token = Token_kind::wide_character_literal, .length = 4}));
 }
 
 TEST_F(Lexer_test, Single_line_comments_match_from_the_two_slashes)
@@ -1790,15 +1796,15 @@ TEST_F(Lexer_test, Single_line_comments_match_from_the_two_slashes)
 
     const auto lexer{builder.build()};
 
-    using Match = Lexer::Match<Token_kind>;
+    using Match_t = Lexer::Match<Token_kind>;
 
     EXPECT_EQ(
             lexer.tokenize<Token_kind>("// This is a comment"),
-            (Match{.token = Token_kind::single_line_comment, .length = 20}));
-    EXPECT_EQ(lexer.tokenize<Token_kind>("//"), (Match{.token = Token_kind::single_line_comment, .length = 2}));
+            (Match_t{.token = Token_kind::single_line_comment, .length = 20}));
+    EXPECT_EQ(lexer.tokenize<Token_kind>("//"), (Match_t{.token = Token_kind::single_line_comment, .length = 2}));
     EXPECT_EQ(
             lexer.tokenize<Token_kind>("// @#$%^&*()"),
-            (Match{.token = Token_kind::single_line_comment, .length = 12}));
+            (Match_t{.token = Token_kind::single_line_comment, .length = 12}));
 }
 
 TEST_F(Lexer_test, Multi_line_comments_match_through_the_closing_star_slash)
@@ -1821,18 +1827,18 @@ TEST_F(Lexer_test, Multi_line_comments_match_through_the_closing_star_slash)
 
     const auto lexer{builder.build()};
 
-    using Match = Lexer::Match<Token_kind>;
+    using Match_t = Lexer::Match<Token_kind>;
 
     EXPECT_EQ(
             lexer.tokenize<Token_kind>("/* comment */"),
-            (Match{.token = Token_kind::multi_line_comment, .length = 13}));
+            (Match_t{.token = Token_kind::multi_line_comment, .length = 13}));
     EXPECT_EQ(
             lexer.tokenize<Token_kind>("/* multi\n   line\n   comment */"),
-            (Match{.token = Token_kind::multi_line_comment, .length = 30}));
+            (Match_t{.token = Token_kind::multi_line_comment, .length = 30}));
     EXPECT_EQ(
             lexer.tokenize<Token_kind>("/* start /* nested */ end */"),
-            (Match{.token = Token_kind::multi_line_comment, .length = 28}));
-    EXPECT_EQ(lexer.tokenize<Token_kind>("/**/"), (Match{.token = Token_kind::multi_line_comment, .length = 4}));
+            (Match_t{.token = Token_kind::multi_line_comment, .length = 28}));
+    EXPECT_EQ(lexer.tokenize<Token_kind>("/**/"), (Match_t{.token = Token_kind::multi_line_comment, .length = 4}));
 }
 
 TEST_F(Lexer_test, A_combined_c_like_token_set_matches_every_token_kind)
@@ -1906,42 +1912,43 @@ TEST_F(Lexer_test, A_combined_c_like_token_set_matches_every_token_kind)
 
     const auto lexer{builder.build()};
 
-    using Match = Lexer::Match<Token_kind>;
+    using Match_t = Lexer::Match<Token_kind>;
 
-    EXPECT_EQ(lexer.tokenize<Token_kind>("boolean"), (Match{.token = Token_kind::boolean, .length = 7}));
-    EXPECT_EQ(lexer.tokenize<Token_kind>("char"), (Match{.token = Token_kind::char_keyword, .length = 4}));
-    EXPECT_EQ(lexer.tokenize<Token_kind>("string"), (Match{.token = Token_kind::string, .length = 6}));
-    EXPECT_EQ(lexer.tokenize<Token_kind>("int8"), (Match{.token = Token_kind::int8, .length = 4}));
-    EXPECT_EQ(lexer.tokenize<Token_kind>("uint8"), (Match{.token = Token_kind::uint8, .length = 5}));
-    EXPECT_EQ(lexer.tokenize<Token_kind>("int16"), (Match{.token = Token_kind::int16, .length = 5}));
-    EXPECT_EQ(lexer.tokenize<Token_kind>("uint16"), (Match{.token = Token_kind::uint16, .length = 6}));
-    EXPECT_EQ(lexer.tokenize<Token_kind>("int32"), (Match{.token = Token_kind::int32, .length = 5}));
-    EXPECT_EQ(lexer.tokenize<Token_kind>("uint32"), (Match{.token = Token_kind::uint32, .length = 6}));
-    EXPECT_EQ(lexer.tokenize<Token_kind>("int64"), (Match{.token = Token_kind::int64, .length = 5}));
-    EXPECT_EQ(lexer.tokenize<Token_kind>("uint64"), (Match{.token = Token_kind::uint64, .length = 6}));
+    EXPECT_EQ(lexer.tokenize<Token_kind>("boolean"), (Match_t{.token = Token_kind::boolean, .length = 7}));
+    EXPECT_EQ(lexer.tokenize<Token_kind>("char"), (Match_t{.token = Token_kind::char_keyword, .length = 4}));
+    EXPECT_EQ(lexer.tokenize<Token_kind>("string"), (Match_t{.token = Token_kind::string, .length = 6}));
+    EXPECT_EQ(lexer.tokenize<Token_kind>("int8"), (Match_t{.token = Token_kind::int8, .length = 4}));
+    EXPECT_EQ(lexer.tokenize<Token_kind>("uint8"), (Match_t{.token = Token_kind::uint8, .length = 5}));
+    EXPECT_EQ(lexer.tokenize<Token_kind>("int16"), (Match_t{.token = Token_kind::int16, .length = 5}));
+    EXPECT_EQ(lexer.tokenize<Token_kind>("uint16"), (Match_t{.token = Token_kind::uint16, .length = 6}));
+    EXPECT_EQ(lexer.tokenize<Token_kind>("int32"), (Match_t{.token = Token_kind::int32, .length = 5}));
+    EXPECT_EQ(lexer.tokenize<Token_kind>("uint32"), (Match_t{.token = Token_kind::uint32, .length = 6}));
+    EXPECT_EQ(lexer.tokenize<Token_kind>("int64"), (Match_t{.token = Token_kind::int64, .length = 5}));
+    EXPECT_EQ(lexer.tokenize<Token_kind>("uint64"), (Match_t{.token = Token_kind::uint64, .length = 6}));
 
-    EXPECT_EQ(lexer.tokenize<Token_kind>("variable_name_1"), (Match{.token = Token_kind::identifier, .length = 15}));
+    EXPECT_EQ(lexer.tokenize<Token_kind>("variable_name_1"), (Match_t{.token = Token_kind::identifier, .length = 15}));
 
-    EXPECT_EQ(lexer.tokenize<Token_kind>("1234"), (Match{.token = Token_kind::integer_literal, .length = 4}));
+    EXPECT_EQ(lexer.tokenize<Token_kind>("1234"), (Match_t{.token = Token_kind::integer_literal, .length = 4}));
     EXPECT_EQ(
-            lexer.tokenize<Token_kind>(R"("hello world")"), (Match{.token = Token_kind::string_literal, .length = 13}));
-    EXPECT_EQ(lexer.tokenize<Token_kind>("'a'"), (Match{.token = Token_kind::character_literal, .length = 3}));
+            lexer.tokenize<Token_kind>(R"("hello world")"),
+            (Match_t{.token = Token_kind::string_literal, .length = 13}));
+    EXPECT_EQ(lexer.tokenize<Token_kind>("'a'"), (Match_t{.token = Token_kind::character_literal, .length = 3}));
     EXPECT_EQ(
             lexer.tokenize<Token_kind>(R"(L"wide string")"),
-            (Match{.token = Token_kind::wide_string_literal, .length = 14}));
-    EXPECT_EQ(lexer.tokenize<Token_kind>("L'a'"), (Match{.token = Token_kind::wide_character_literal, .length = 4}));
+            (Match_t{.token = Token_kind::wide_string_literal, .length = 14}));
+    EXPECT_EQ(lexer.tokenize<Token_kind>("L'a'"), (Match_t{.token = Token_kind::wide_character_literal, .length = 4}));
 
-    EXPECT_EQ(lexer.tokenize<Token_kind>("123.45"), (Match{.token = Token_kind::fixed_point_literal, .length = 6}));
+    EXPECT_EQ(lexer.tokenize<Token_kind>("123.45"), (Match_t{.token = Token_kind::fixed_point_literal, .length = 6}));
     EXPECT_EQ(
             lexer.tokenize<Token_kind>("3.14159e+2"),
-            (Match{.token = Token_kind::floating_point_literal, .length = 10}));
+            (Match_t{.token = Token_kind::floating_point_literal, .length = 10}));
 
     EXPECT_EQ(
             lexer.tokenize<Token_kind>("// a comment"),
-            (Match{.token = Token_kind::single_line_comment, .length = 12}));
+            (Match_t{.token = Token_kind::single_line_comment, .length = 12}));
     EXPECT_EQ(
             lexer.tokenize<Token_kind>("/* a comment */"),
-            (Match{.token = Token_kind::multi_line_comment, .length = 15}));
+            (Match_t{.token = Token_kind::multi_line_comment, .length = 15}));
 }
 
 TEST_F(Lexer_test, Tokenize_all_matches_sequential_tokenization)
@@ -4039,14 +4046,14 @@ TEST_F(Lexer_test, A_window_budget_of_five_cuts_where_the_default_of_four_leaves
 
     EXPECT_EQ(Window_planner::longest_window, 4U);
 
-    using Found = std::optional<std::pair<std::size_t, std::size_t>>;
+    using Found_t = std::optional<std::pair<std::size_t, std::size_t>>;
 
     Window_planner by_default{};
 
     Window_planner wider{5};
 
     EXPECT_EQ(by_default.window_at(lexer.simulator(), std::string_view{"baaab"}.begin(), 5, 0), std::nullopt);
-    EXPECT_EQ(wider.window_at(lexer.simulator(), std::string_view{"baaab"}.begin(), 5, 0), Found({4, 5}));
+    EXPECT_EQ(wider.window_at(lexer.simulator(), std::string_view{"baaab"}.begin(), 5, 0), Found_t({4, 5}));
 
     std::string input{};
 
@@ -6056,17 +6063,18 @@ TEST_F(Lexer_test, Container_concepts_require_common_const_ranges)
     // A counted iterator paired with the default sentinel is random access but not a common range, and a begin/end pair
     // of different types cannot instantiate the single-iterator entry points, so the concept must reject it at the
     // interface instead of failing inside the body.
-    using Counted = std::ranges::subrange<std::counted_iterator<std::string::const_iterator>, std::default_sentinel_t>;
+    using Counted_t =
+            std::ranges::subrange<std::counted_iterator<std::string::const_iterator>, std::default_sentinel_t>;
 
-    static_assert(std::ranges::random_access_range<Counted>);
-    static_assert(!Random_access_iterable<Counted>);
-    static_assert(!Iterable<Counted>);
+    static_assert(std::ranges::random_access_range<Counted_t>);
+    static_assert(!Random_access_iterable<Counted_t>);
+    static_assert(!Iterable<Counted_t>);
 
     // A filter view iterates only mutably, and every container overload takes a const reference.
-    using Filtered = decltype(std::declval<std::string&>() | std::views::filter([](char) { return true; }));
+    using Filtered_t = decltype(std::declval<std::string&>() | std::views::filter([](char) { return true; }));
 
-    static_assert(std::ranges::range<Filtered>);
-    static_assert(!Iterable<Filtered>);
+    static_assert(std::ranges::range<Filtered_t>);
+    static_assert(!Iterable<Filtered_t>);
 
     // views::common is the caller's one-line repair, and over a sized random access range it keeps random access.
     const Builder builder{};
@@ -6131,24 +6139,24 @@ TEST_F(Lexer_test, Container_concepts_require_common_const_ranges)
             !Single_scan_over<Two_faced> && !Full_scan_over<Two_faced> && !Byte_plan_over<Two_faced> &&
             !Window_plan_over<Two_faced> && !Window_budget_plan_over<Two_faced> && !Parallel_scan_over<Two_faced>);
 
-    using Good_iterator = std::string_view::iterator;
-    using Bad_iterator = std::vector<double>::const_iterator;
+    using Good_iterator_t = std::string_view::iterator;
+    using Bad_iterator_t = std::vector<double>::const_iterator;
 
     static_assert(
-            Single_scan_through<Good_iterator> && Full_scan_through<Good_iterator> &&
-            Byte_plan_through<Good_iterator> && Window_plan_through<Good_iterator> &&
-            Window_budget_plan_through<Good_iterator> && Parallel_scan_through<Good_iterator>);
+            Single_scan_through<Good_iterator_t> && Full_scan_through<Good_iterator_t> &&
+            Byte_plan_through<Good_iterator_t> && Window_plan_through<Good_iterator_t> &&
+            Window_budget_plan_through<Good_iterator_t> && Parallel_scan_through<Good_iterator_t>);
 
     static_assert(
-            !Single_scan_through<Bad_iterator> && !Full_scan_through<Bad_iterator> &&
-            !Byte_plan_through<Bad_iterator> && !Window_plan_through<Bad_iterator> &&
-            !Window_budget_plan_through<Bad_iterator> && !Parallel_scan_through<Bad_iterator>);
+            !Single_scan_through<Bad_iterator_t> && !Full_scan_through<Bad_iterator_t> &&
+            !Byte_plan_through<Bad_iterator_t> && !Window_plan_through<Bad_iterator_t> &&
+            !Window_budget_plan_through<Bad_iterator_t> && !Parallel_scan_through<Bad_iterator_t>);
 
     // The library scanners beneath the Lexer hold the same line.
-    static_assert(Dfa_run_through<Good_iterator> && !Dfa_run_through<Bad_iterator>);
-    static_assert(Dfa_run_all_through<Good_iterator> && !Dfa_run_all_through<Bad_iterator>);
+    static_assert(Dfa_run_through<Good_iterator_t> && !Dfa_run_through<Bad_iterator_t>);
+    static_assert(Dfa_run_all_through<Good_iterator_t> && !Dfa_run_all_through<Bad_iterator_t>);
     static_assert(Dfa_scan_over<std::string> && !Dfa_scan_over<std::vector<double>> && !Dfa_scan_over<Two_faced>);
-    static_assert(Nfa_scan_through<Good_iterator> && !Nfa_scan_through<Bad_iterator>);
+    static_assert(Nfa_scan_through<Good_iterator_t> && !Nfa_scan_through<Bad_iterator_t>);
     static_assert(Nfa_scan_over<std::string> && !Nfa_scan_over<std::vector<double>> && !Nfa_scan_over<Two_faced>);
 }
 
@@ -7522,7 +7530,7 @@ TEST_F(Lexer_test, Window_at_tries_lengths_ascending_from_two_and_the_first_cert
     ASSERT_TRUE(lexer.is_split_window("abb").has_value());
     ASSERT_FALSE(lexer.is_split_window("aa").has_value());
 
-    using Found = std::optional<std::pair<std::size_t, std::size_t>>;
+    using Found_t = std::optional<std::pair<std::size_t, std::size_t>>;
 
     Window_planner planner{};
 
@@ -7530,8 +7538,8 @@ TEST_F(Lexer_test, Window_at_tries_lengths_ascending_from_two_and_the_first_cert
         return planner.window_at(lexer.simulator(), input.begin(), input.size(), at);
     }};
 
-    EXPECT_EQ(window_at("abb", 0), Found({1, 2}));
-    EXPECT_EQ(window_at("aab", 0), Found({2, 3}));
+    EXPECT_EQ(window_at("abb", 0), Found_t({1, 2}));
+    EXPECT_EQ(window_at("aab", 0), Found_t({2, 3}));
     EXPECT_EQ(window_at("aaaaa", 0), std::nullopt);
     EXPECT_EQ(window_at("ab", 1), std::nullopt);
 

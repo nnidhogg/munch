@@ -13,7 +13,7 @@
 #include "munch/tools/audit/read_re2c.hpp"
 
 /**
- * @brief What re2c calls a char set, as the code points it admits under the block's encoding, Class, and how one is
+ * @brief What re2c calls a char set, as the code points it admits under the block's encoding, Class_t, and how one is
  *        written for the pattern parser: the code points of a bracket, code_points(), the union and the difference
  *        re2c's class difference takes, united() and subtracted(), and the rendering under an encoding, rendered() and
  *        step(), with the classes among a block's definitions kept by name, Classes_t and note_class(), and the class
@@ -29,13 +29,13 @@ namespace munch::tools::audit
  * @brief The code points a class admits, as ascending, disjoint ranges: each a byte's value under the byte encodings
  *        and any scalar under UTF-8. What re2c calls a char set, which is all its class difference takes.
  */
-using Class = std::vector<regex::utf8::Code_point_range>;
+using Class_t = std::vector<regex::utf8::Code_point_range>;
 
 /**
  * @brief The classes among the definitions in force, by name: a definition whose regex is one class, which a class
  *        difference naming it takes as an operand; a definition that is no class has no entry.
  */
-using Classes_t = std::map<std::string, Class, std::less<>>;
+using Classes_t = std::map<std::string, Class_t, std::less<>>;
 
 /**
  * @brief What the parser reads every re2c pattern under: a bracket range written backwards spans its members as re2c
@@ -70,7 +70,7 @@ constexpr std::string_view any_byte{R"([\x00-\xff])"};
  * @param space One past the last code point there is, which a negated class runs to.
  * @return The class, or std::nullopt when the parser reads the bracket as something else.
  */
-[[nodiscard]] std::optional<Class> code_points(
+[[nodiscard]] std::optional<Class_t> code_points(
         std::string_view bracket, const pattern::Definitions_t& definitions, char32_t space);
 
 /**
@@ -79,7 +79,7 @@ constexpr std::string_view any_byte{R"([\x00-\xff])"};
  * @param right The right class.
  * @return The class holding the code points of either.
  */
-[[nodiscard]] Class united(const Class& left, const Class& right);
+[[nodiscard]] Class_t united(const Class_t& left, const Class_t& right);
 
 /**
  * @brief Returns the difference of two classes, re2c's `left \ right`.
@@ -87,7 +87,7 @@ constexpr std::string_view any_byte{R"([\x00-\xff])"};
  * @param right The right class.
  * @return The class holding the code points of the left that the right has not got.
  */
-[[nodiscard]] Class subtracted(const Class& left, const Class& right);
+[[nodiscard]] Class_t subtracted(const Class_t& left, const Class_t& right);
 
 /**
  * @brief Returns a class as the pattern parser's syntax under an encoding: under UTF-8 one step of its code points
@@ -97,14 +97,14 @@ constexpr std::string_view any_byte{R"([\x00-\xff])"};
  * @param encoding The encoding.
  * @return The expression, one atom.
  */
-[[nodiscard]] std::string rendered(const Class& points, Re2c_encoding encoding);
+[[nodiscard]] std::string rendered(const Class_t& points, Re2c_encoding encoding);
 
 /**
  * @brief Returns whether every code point of a class is ASCII, whose encoding under UTF-8 is the byte itself.
  * @param points The class.
  * @return True when it is.
  */
-[[nodiscard]] bool is_ascii(const Class& points);
+[[nodiscard]] bool is_ascii(const Class_t& points);
 
 /**
  * @brief Returns a set of code points as one step of the pattern parser's syntax under the UTF-8 encoding.
@@ -125,7 +125,7 @@ constexpr std::string_view any_byte{R"([\x00-\xff])"};
  * @param name The definition's name.
  * @param points Its class, when its regex is one.
  */
-void note_class(Classes_t& classes, const std::string& name, std::optional<Class> points);
+void note_class(Classes_t& classes, const std::string& name, std::optional<Class_t> points);
 
 } // namespace munch::tools::audit
 

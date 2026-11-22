@@ -27,7 +27,7 @@ namespace
  * @param point The code point.
  * @return True when it does.
  */
-[[nodiscard]] bool holds(const Class& points, const char32_t point)
+[[nodiscard]] bool holds(const Class_t& points, const char32_t point)
 {
     const auto after{
             std::ranges::upper_bound(points, point, std::ranges::less{}, &regex::utf8::Code_point_range::first)};
@@ -89,13 +89,13 @@ namespace
  * @return The class, ascending and disjoint, empty when nothing is kept.
  */
 template <typename Keep>
-[[nodiscard]] Class combined(const Class& left, const Class& right, Keep keep)
+[[nodiscard]] Class_t combined(const Class_t& left, const Class_t& right, Keep keep)
 {
     // Membership in either operand changes only where one of its ranges begins or just past where one ends, so the code
     // points between two such edges in a row are all kept or all dropped.
     std::vector<char32_t> edges{};
 
-    const auto add_edges{[&edges](const Class& points) {
+    const auto add_edges{[&edges](const Class_t& points) {
         for (const auto& [first, last] : points)
         {
             edges.push_back(first);
@@ -115,7 +115,7 @@ template <typename Keep>
 
     edges.erase(duplicates, end);
 
-    Class kept{};
+    Class_t kept{};
 
     for (std::size_t index{0}; index + 1 < edges.size(); ++index)
     {
@@ -143,7 +143,7 @@ template <typename Keep>
 
 } // namespace
 
-std::optional<Class> code_points(
+std::optional<Class_t> code_points(
         const std::string_view bracket, const pattern::Definitions_t& definitions, const char32_t space)
 {
     static constexpr std::string_view negated_opener{"[^"};
@@ -201,7 +201,7 @@ std::optional<Class> code_points(
         }
     }
 
-    Class ranges{};
+    Class_t ranges{};
 
     for (char32_t point{0}; point < space; ++point)
     {
@@ -223,19 +223,19 @@ std::optional<Class> code_points(
     return ranges;
 }
 
-Class united(const Class& left, const Class& right)
+Class_t united(const Class_t& left, const Class_t& right)
 {
     return combined(left, right, std::logical_or{});
 }
 
-Class subtracted(const Class& left, const Class& right)
+Class_t subtracted(const Class_t& left, const Class_t& right)
 {
     const auto left_only{[](const bool in_left, const bool in_right) { return in_left && !in_right; }};
 
     return combined(left, right, left_only);
 }
 
-std::string rendered(const Class& points, const Re2c_encoding encoding)
+std::string rendered(const Class_t& points, const Re2c_encoding encoding)
 {
     if (encoding == Re2c_encoding::utf8 && !is_ascii(points))
     {
@@ -255,7 +255,7 @@ std::string rendered(const Class& points, const Re2c_encoding encoding)
     return bracket(bytes);
 }
 
-bool is_ascii(const Class& points)
+bool is_ascii(const Class_t& points)
 {
     const auto ascii_range{[](const regex::utf8::Code_point_range& range) { return range.last <= last_ascii; }};
 
@@ -296,7 +296,7 @@ std::string step(const std::vector<regex::utf8::Code_point_range>& ranges)
     return std::format(R"(([{}]|"\xed"[\xa0-\xbf][\x80-\xbf]))", members);
 }
 
-void note_class(Classes_t& classes, const std::string& name, std::optional<Class> points)
+void note_class(Classes_t& classes, const std::string& name, std::optional<Class_t> points)
 {
     if (points)
     {

@@ -548,7 +548,7 @@ private:
      *         block a `!use:` directive brought in, at the directive's; the same definition seen again, through a
      *         second use of the block declaring it, binds it as before.
      */
-    void define(Lexer_spec& spec, Definition_site site, std::string expression, std::optional<Class> points);
+    void define(Lexer_spec& spec, Definition_site site, std::string expression, std::optional<Class_t> points);
 
     /**
      * @brief Reads re2c's own definition when the name read is followed by its `=`: a name, `=`, its body and `;`.
